@@ -1,0 +1,23 @@
+{
+  "name": "review-refactor-mode",
+  "description": "Interactive, incremental code review workflow for given codebases. Performs focused analysis of only on user given commit id(s) and modified code and test files, surfaces the most critical issues first, and interacts with the user step‑by‑step to determine whether to refactor, skip, elaborate, or backlog each issue.",
+  "prompt": "file://./prompts/review-mode.agent.md",
+  "mcpServers": {},
+  "tools": ["read", "write", "code", "grep", "glob", "shell"],
+  "toolAliases": {},
+  "allowedTools": ["read", "write", "code", "grep", "glob", "shell"],
+  "resources": ["file://../artifacts/**/*.md", "file://./guidelines/**/*.md"],
+  "toolsSettings": {
+    "shell": {
+      "allowedCommands": ["git status", "git fetch"],
+      "deniedCommands": ["git commit .*", "git push .*"],
+      "autoAllowReadonly": true
+    },
+    "@git/git_status": {
+      "git_user": "$GIT_USER"
+    }
+  },
+  "hooks": {},
+  "useLegacyMcpJson": true,
+  "model": "claude-opus-4.5"
+}

@@ -1,0 +1,17 @@
+{
+  "name": "business-context",
+  "description": "Business Context Mode - Creates comprehensive business context for a specific project module.",
+  "prompt": "file://./prompts/business-context.agent.md",
+  "mcpServers": {},
+  "tools": ["read", "write", "shell"],
+  "toolAliases": {},
+  "allowedTools": ["read", "shell", "write"],
+  "toolsSettings": {},
+  "resources": [
+    "file://../artifacts/**/*.md",
+    "file://./guidelines/**/*.md"
+  ],
+  "hooks": {},
+  "useLegacyMcpJson": false,
+  "model": "claude-opus-4.5"
+}

@@ -1,0 +1,17 @@
+{
+  "name": "tech-context",
+  "description": "Technical Context Mode - Creates comprehensive technical context for a specific project module.",
+  "prompt": "file://./prompts/tech-context.agent.md",
+  "mcpServers": {},
+  "tools": ["read", "write", "shell"],
+  "toolAliases": {},
+  "allowedTools": ["read", "shell", "write"],
+  "toolsSettings": {},
+  "resources": [
+    "file://../artifacts/**/*.md",
+    "file://./guidelines/**/*.md"
+  ],
+  "hooks": {},
+  "useLegacyMcpJson": false,
+  "model": "claude-opus-4.5"
+}

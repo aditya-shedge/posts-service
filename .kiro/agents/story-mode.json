@@ -1,0 +1,17 @@
+{
+  "name": "story-mode",
+  "description": "This is the mode to use when writing user stories.",
+  "prompt": "file://./prompts/story-mode.agent.md",
+  "mcpServers": {},
+  "tools": ["read", "write", "code", "grep", "glob", "shell"],
+  "toolAliases": {},
+  "allowedTools": ["read", "write", "code", "grep", "glob", "shell"],
+  "toolsSettings": {},
+  "resources": [
+    "file://../artifacts/**/*.md",
+    "file://./guidelines/**/*.md"
+  ],
+  "hooks": {},
+  "useLegacyMcpJson": false,
+  "model": "claude-opus-4.5"
+}
