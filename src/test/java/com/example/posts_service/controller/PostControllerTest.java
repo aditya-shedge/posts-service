@@ -24,6 +24,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -159,6 +160,90 @@ class PostControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400))
                 .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("remarks")));
+    }
+
+    @Test
+    void validUpdateRequestReturns200WithUpdatedPost() throws Exception {
+        UUID postId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        setAuthenticatedUser(userId);
+
+        PostResponse mockResponse = new PostResponse(
+                postId, "Updated text", "https://new.com/doc.pdf", "New remarks",
+                PostStatus.PUBLISHED, userId, LocalDateTime.now(), LocalDateTime.now()
+        );
+        when(postService.updatePost(any(), any(), any())).thenReturn(mockResponse);
+
+        mockMvc.perform(put("/api/posts/{postId}", postId)
+                        .header("Authorization", "Bearer " + TestJwtUtil.generateToken(userId, "teacher"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "text": "Updated text",
+                                  "attachment": "https://new.com/doc.pdf",
+                                  "remarks": "New remarks"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(postId.toString()))
+                .andExpect(jsonPath("$.text").value("Updated text"));
+    }
+
+    @Test
+    void updateWithBlankTextReturns400ValidationError() throws Exception {
+        UUID postId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        setAuthenticatedUser(userId);
+
+        mockMvc.perform(put("/api/posts/{postId}", postId)
+                        .header("Authorization", "Bearer " + TestJwtUtil.generateToken(userId, "teacher"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "text": "",
+                                  "attachment": "https://example.com/doc.pdf"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("text")));
+    }
+
+    @Test
+    void updateWithInvalidUrlReturns400ValidationError() throws Exception {
+        UUID postId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        setAuthenticatedUser(userId);
+
+        mockMvc.perform(put("/api/posts/{postId}", postId)
+                        .header("Authorization", "Bearer " + TestJwtUtil.generateToken(userId, "teacher"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "text": "Updated text",
+                                  "attachment": "not-a-valid-url"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("attachment")));
+    }
+
+    @Test
+    void updateWithInvalidUuidReturns400() throws Exception {
+        UUID userId = UUID.randomUUID();
+        setAuthenticatedUser(userId);
+
+        mockMvc.perform(put("/api/posts/not-a-uuid")
+                        .header("Authorization", "Bearer " + TestJwtUtil.generateToken(userId, "teacher"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "text": "Updated text"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400));
     }
 
     private void setAuthenticatedUser(UUID userId) {

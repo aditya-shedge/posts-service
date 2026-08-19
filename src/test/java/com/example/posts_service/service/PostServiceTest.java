@@ -2,6 +2,9 @@ package com.example.posts_service.service;
 
 import com.example.posts_service.dto.CreatePostRequest;
 import com.example.posts_service.dto.PostResponse;
+import com.example.posts_service.dto.UpdatePostRequest;
+import com.example.posts_service.exception.PostNotFoundException;
+import com.example.posts_service.exception.UnauthorizedPostAccessException;
 import com.example.posts_service.model.Post;
 import com.example.posts_service.model.PostStatus;
 import com.example.posts_service.repository.PostRepository;
@@ -13,11 +16,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
@@ -104,5 +109,85 @@ class PostServiceTest {
         PostResponse response = postService.createPost(request, userId);
 
         assertEquals(userId, response.getCreatedBy());
+    }
+
+    @Test
+    void updatingOwnPostReturnsUpdatedPostResponse() {
+        UUID postId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        LocalDateTime createdAt = LocalDateTime.now().minusHours(1);
+        Post existingPost = new Post(postId, "Original text", "https://old.com/doc.pdf", "Old remarks",
+                PostStatus.PUBLISHED, userId, createdAt, createdAt);
+
+        UpdatePostRequest request = new UpdatePostRequest("Updated text", "https://new.com/doc.pdf", "New remarks");
+
+        when(postRepository.findById(postId)).thenReturn(Optional.of(existingPost));
+        when(postRepository.save(any(Post.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        PostResponse response = postService.updatePost(postId, request, userId);
+
+        assertEquals("Updated text", response.getText());
+        assertEquals("https://new.com/doc.pdf", response.getAttachment());
+        assertEquals("New remarks", response.getRemarks());
+    }
+
+    @Test
+    void updatingNonExistentPostThrowsPostNotFoundException() {
+        UUID postId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        UpdatePostRequest request = new UpdatePostRequest("Updated text", null, null);
+
+        when(postRepository.findById(postId)).thenReturn(Optional.empty());
+
+        assertThrows(PostNotFoundException.class, () -> postService.updatePost(postId, request, userId));
+    }
+
+    @Test
+    void updatingAnotherUsersPostThrowsUnauthorizedPostAccessException() {
+        UUID postId = UUID.randomUUID();
+        UUID ownerId = UUID.randomUUID();
+        UUID otherUserId = UUID.randomUUID();
+        Post existingPost = new Post(postId, "Original text", null, null,
+                PostStatus.PUBLISHED, ownerId, LocalDateTime.now(), LocalDateTime.now());
+
+        UpdatePostRequest request = new UpdatePostRequest("Updated text", null, null);
+
+        when(postRepository.findById(postId)).thenReturn(Optional.of(existingPost));
+
+        assertThrows(UnauthorizedPostAccessException.class, () -> postService.updatePost(postId, request, otherUserId));
+    }
+
+    @Test
+    void updatingPostWithNullAttachmentClearsAttachment() {
+        UUID postId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        Post existingPost = new Post(postId, "Original text", "https://old.com/doc.pdf", null,
+                PostStatus.PUBLISHED, userId, LocalDateTime.now(), LocalDateTime.now());
+
+        UpdatePostRequest request = new UpdatePostRequest("Updated text", null, null);
+
+        when(postRepository.findById(postId)).thenReturn(Optional.of(existingPost));
+        when(postRepository.save(any(Post.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        PostResponse response = postService.updatePost(postId, request, userId);
+
+        assertNull(response.getAttachment());
+    }
+
+    @Test
+    void updatingPostWithNullRemarksClearsRemarks() {
+        UUID postId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        Post existingPost = new Post(postId, "Original text", null, "Old remarks",
+                PostStatus.PUBLISHED, userId, LocalDateTime.now(), LocalDateTime.now());
+
+        UpdatePostRequest request = new UpdatePostRequest("Updated text", null, null);
+
+        when(postRepository.findById(postId)).thenReturn(Optional.of(existingPost));
+        when(postRepository.save(any(Post.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        PostResponse response = postService.updatePost(postId, request, userId);
+
+        assertNull(response.getRemarks());
     }
 }
