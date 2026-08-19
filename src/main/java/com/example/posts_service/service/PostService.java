@@ -2,6 +2,7 @@ package com.example.posts_service.service;
 
 import com.example.posts_service.dto.CreatePostRequest;
 import com.example.posts_service.dto.PostResponse;
+import com.example.posts_service.exception.PostNotFoundException;
 import com.example.posts_service.model.Post;
 import com.example.posts_service.model.PostStatus;
 import com.example.posts_service.repository.PostRepository;
@@ -27,6 +28,12 @@ public class PostService {
         return postRepository.findAllByOrderByCreatedAtDesc().stream()
                 .map(this::toResponse)
                 .toList();
+    }
+
+    public PostResponse getPostById(UUID postId) {
+        Post post = postRepository.findById(postId)
+                .orElseThrow(() -> new PostNotFoundException(postId));
+        return toResponse(post);
     }
 
     public PostResponse createPost(CreatePostRequest request, UUID userId) {
