@@ -2,7 +2,9 @@ package com.example.posts_service.service;
 
 import com.example.posts_service.dto.CreatePostRequest;
 import com.example.posts_service.dto.PostResponse;
+import com.example.posts_service.dto.UpdatePostRequest;
 import com.example.posts_service.exception.PostNotFoundException;
+import com.example.posts_service.exception.UnauthorizedPostAccessException;
 import com.example.posts_service.model.Post;
 import com.example.posts_service.model.PostStatus;
 import com.example.posts_service.repository.PostRepository;
@@ -34,6 +36,24 @@ public class PostService {
         Post post = postRepository.findById(postId)
                 .orElseThrow(() -> new PostNotFoundException(postId));
         return toResponse(post);
+    }
+
+    public PostResponse updatePost(UUID postId, UpdatePostRequest request, UUID userId) {
+        Post post = postRepository.findById(postId)
+                .orElseThrow(() -> new PostNotFoundException(postId));
+
+        if (!post.getCreatedBy().equals(userId)) {
+            throw new UnauthorizedPostAccessException(postId);
+        }
+
+        post.setText(request.getText());
+        post.setAttachment(request.getAttachment());
+        post.setRemarks(request.getRemarks());
+
+        Post saved = postRepository.save(post);
+        log.info("Updated post: id={}, updatedBy={}", saved.getId(), userId);
+
+        return toResponse(saved);
     }
 
     public PostResponse createPost(CreatePostRequest request, UUID userId) {
