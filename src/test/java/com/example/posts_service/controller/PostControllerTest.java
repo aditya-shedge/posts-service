@@ -22,6 +22,7 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -242,6 +243,28 @@ class PostControllerTest {
                                   "text": "Updated text"
                                 }
                                 """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400));
+    }
+
+    @Test
+    void validDeleteRequestReturns204NoContent() throws Exception {
+        UUID postId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        setAuthenticatedUser(userId);
+
+        mockMvc.perform(delete("/api/posts/{postId}", postId)
+                        .header("Authorization", "Bearer " + TestJwtUtil.generateToken(userId, "teacher")))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void deleteWithInvalidUuidReturns400() throws Exception {
+        UUID userId = UUID.randomUUID();
+        setAuthenticatedUser(userId);
+
+        mockMvc.perform(delete("/api/posts/not-a-uuid")
+                        .header("Authorization", "Bearer " + TestJwtUtil.generateToken(userId, "teacher")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400));
     }

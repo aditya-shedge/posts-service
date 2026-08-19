@@ -25,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -49,7 +50,7 @@ class PostServiceTest {
         Post newerPost = new Post(UUID.randomUUID(), "Newer post", null, null, PostStatus.PUBLISHED, userId, newer, newer);
         Post olderPost = new Post(UUID.randomUUID(), "Older post", null, null, PostStatus.PUBLISHED, userId, older, older);
 
-        when(postRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(newerPost, olderPost));
+        when(postRepository.findAllByStatusOrderByCreatedAtDesc(PostStatus.PUBLISHED)).thenReturn(List.of(newerPost, olderPost));
 
         List<PostResponse> responses = postService.getAllPosts();
 
@@ -60,7 +61,7 @@ class PostServiceTest {
 
     @Test
     void fetchingPostsWhenNoneExistReturnsEmptyList() {
-        when(postRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of());
+        when(postRepository.findAllByStatusOrderByCreatedAtDesc(PostStatus.PUBLISHED)).thenReturn(List.of());
 
         List<PostResponse> responses = postService.getAllPosts();
 
@@ -121,7 +122,7 @@ class PostServiceTest {
 
         UpdatePostRequest request = new UpdatePostRequest("Updated text", "https://new.com/doc.pdf", "New remarks");
 
-        when(postRepository.findById(postId)).thenReturn(Optional.of(existingPost));
+        when(postRepository.findByIdAndStatus(postId, PostStatus.PUBLISHED)).thenReturn(Optional.of(existingPost));
         when(postRepository.save(any(Post.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         PostResponse response = postService.updatePost(postId, request, userId);
@@ -137,7 +138,7 @@ class PostServiceTest {
         UUID userId = UUID.randomUUID();
         UpdatePostRequest request = new UpdatePostRequest("Updated text", null, null);
 
-        when(postRepository.findById(postId)).thenReturn(Optional.empty());
+        when(postRepository.findByIdAndStatus(postId, PostStatus.PUBLISHED)).thenReturn(Optional.empty());
 
         assertThrows(PostNotFoundException.class, () -> postService.updatePost(postId, request, userId));
     }
@@ -152,7 +153,7 @@ class PostServiceTest {
 
         UpdatePostRequest request = new UpdatePostRequest("Updated text", null, null);
 
-        when(postRepository.findById(postId)).thenReturn(Optional.of(existingPost));
+        when(postRepository.findByIdAndStatus(postId, PostStatus.PUBLISHED)).thenReturn(Optional.of(existingPost));
 
         assertThrows(UnauthorizedPostAccessException.class, () -> postService.updatePost(postId, request, otherUserId));
     }
@@ -166,7 +167,7 @@ class PostServiceTest {
 
         UpdatePostRequest request = new UpdatePostRequest("Updated text", null, null);
 
-        when(postRepository.findById(postId)).thenReturn(Optional.of(existingPost));
+        when(postRepository.findByIdAndStatus(postId, PostStatus.PUBLISHED)).thenReturn(Optional.of(existingPost));
         when(postRepository.save(any(Post.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         PostResponse response = postService.updatePost(postId, request, userId);
@@ -183,11 +184,60 @@ class PostServiceTest {
 
         UpdatePostRequest request = new UpdatePostRequest("Updated text", null, null);
 
-        when(postRepository.findById(postId)).thenReturn(Optional.of(existingPost));
+        when(postRepository.findByIdAndStatus(postId, PostStatus.PUBLISHED)).thenReturn(Optional.of(existingPost));
         when(postRepository.save(any(Post.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         PostResponse response = postService.updatePost(postId, request, userId);
 
         assertNull(response.getRemarks());
+    }
+
+    @Test
+    void deletingOwnPostChangesStatusToDeleted() {
+        UUID postId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        Post existingPost = new Post(postId, "Post to delete", null, null,
+                PostStatus.PUBLISHED, userId, LocalDateTime.now(), LocalDateTime.now());
+
+        when(postRepository.findByIdAndStatus(postId, PostStatus.PUBLISHED)).thenReturn(Optional.of(existingPost));
+        when(postRepository.save(any(Post.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        postService.deletePost(postId, userId);
+
+        assertEquals(PostStatus.DELETED, existingPost.getStatus());
+        verify(postRepository).save(existingPost);
+    }
+
+    @Test
+    void deletingNonExistentPostThrowsPostNotFoundException() {
+        UUID postId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+
+        when(postRepository.findByIdAndStatus(postId, PostStatus.PUBLISHED)).thenReturn(Optional.empty());
+
+        assertThrows(PostNotFoundException.class, () -> postService.deletePost(postId, userId));
+    }
+
+    @Test
+    void deletingAnotherUsersPostThrowsUnauthorizedPostAccessException() {
+        UUID postId = UUID.randomUUID();
+        UUID ownerId = UUID.randomUUID();
+        UUID otherUserId = UUID.randomUUID();
+        Post existingPost = new Post(postId, "Post to delete", null, null,
+                PostStatus.PUBLISHED, ownerId, LocalDateTime.now(), LocalDateTime.now());
+
+        when(postRepository.findByIdAndStatus(postId, PostStatus.PUBLISHED)).thenReturn(Optional.of(existingPost));
+
+        assertThrows(UnauthorizedPostAccessException.class, () -> postService.deletePost(postId, otherUserId));
+    }
+
+    @Test
+    void deletingAlreadyDeletedPostThrowsPostNotFoundException() {
+        UUID postId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+
+        when(postRepository.findByIdAndStatus(postId, PostStatus.PUBLISHED)).thenReturn(Optional.empty());
+
+        assertThrows(PostNotFoundException.class, () -> postService.deletePost(postId, userId));
     }
 }

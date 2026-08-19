@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -56,5 +57,51 @@ class PostRepositoryTest {
         assertEquals("Simple announcement", retrieved.get().getText());
         assertNull(retrieved.get().getAttachment());
         assertNull(retrieved.get().getRemarks());
+    }
+
+    @Test
+    void findAllByStatusReturnsOnlyPublishedPosts() {
+        UUID userId = UUID.randomUUID();
+        postRepository.save(new Post(UUID.randomUUID(), "Published post", null, null, PostStatus.PUBLISHED, userId, null, null));
+        postRepository.save(new Post(UUID.randomUUID(), "Another published", null, null, PostStatus.PUBLISHED, userId, null, null));
+
+        List<Post> results = postRepository.findAllByStatusOrderByCreatedAtDesc(PostStatus.PUBLISHED);
+
+        assertEquals(2, results.size());
+    }
+
+    @Test
+    void findAllByStatusExcludesDeletedPosts() {
+        UUID userId = UUID.randomUUID();
+        postRepository.save(new Post(UUID.randomUUID(), "Published post", null, null, PostStatus.PUBLISHED, userId, null, null));
+        postRepository.save(new Post(UUID.randomUUID(), "Deleted post", null, null, PostStatus.DELETED, userId, null, null));
+
+        List<Post> results = postRepository.findAllByStatusOrderByCreatedAtDesc(PostStatus.PUBLISHED);
+
+        assertEquals(1, results.size());
+        assertEquals("Published post", results.get(0).getText());
+    }
+
+    @Test
+    void findByIdAndStatusReturnsPostWhenPublished() {
+        UUID postId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        postRepository.save(new Post(postId, "Published post", null, null, PostStatus.PUBLISHED, userId, null, null));
+
+        Optional<Post> result = postRepository.findByIdAndStatus(postId, PostStatus.PUBLISHED);
+
+        assertTrue(result.isPresent());
+        assertEquals("Published post", result.get().getText());
+    }
+
+    @Test
+    void findByIdAndStatusReturnsEmptyWhenPostIsDeleted() {
+        UUID postId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        postRepository.save(new Post(postId, "Deleted post", null, null, PostStatus.DELETED, userId, null, null));
+
+        Optional<Post> result = postRepository.findByIdAndStatus(postId, PostStatus.PUBLISHED);
+
+        assertTrue(result.isEmpty());
     }
 }
