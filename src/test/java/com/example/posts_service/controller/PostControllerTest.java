@@ -269,6 +269,26 @@ class PostControllerTest {
                 .andExpect(jsonPath("$.status").value(400));
     }
 
+    @Test
+    void requestWithMultipleInvalidFieldsReturnsAllErrorsInSingleResponse() throws Exception {
+        UUID userId = UUID.randomUUID();
+        setAuthenticatedUser(userId);
+
+        mockMvc.perform(post("/api/posts")
+                        .header("Authorization", "Bearer " + TestJwtUtil.generateToken(userId, "teacher"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "text": "",
+                                  "attachment": "not-a-valid-url"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("text")))
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("attachment")));
+    }
+
     private void setAuthenticatedUser(UUID userId) {
         UserPrincipal principal = new UserPrincipal(userId, "teacher");
         UsernamePasswordAuthenticationToken auth =
