@@ -2,6 +2,7 @@ package com.example.posts_service.controller;
 
 import com.example.posts_service.dto.CreatePostRequest;
 import com.example.posts_service.dto.PostResponse;
+import com.example.posts_service.dto.UpdatePostRequest;
 import com.example.posts_service.security.UserPrincipal;
 import com.example.posts_service.service.PostService;
 import jakarta.validation.Valid;
@@ -11,6 +12,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -44,5 +46,14 @@ public class PostController {
             @AuthenticationPrincipal UserPrincipal principal) {
         PostResponse response = postService.createPost(request, principal.getUserId());
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    @PutMapping("/{postId}")
+    public ResponseEntity<PostResponse> updatePost(
+            @PathVariable UUID postId,
+            @Valid @RequestBody UpdatePostRequest request,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        PostResponse response = postService.updatePost(postId, request, principal.getUserId());
+        return ResponseEntity.ok(response);
     }
 }
