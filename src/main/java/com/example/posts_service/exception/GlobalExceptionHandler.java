@@ -25,6 +25,13 @@ public class GlobalExceptionHandler {
                 .body(new ErrorResponse(404, "Not Found", ex.getMessage()));
     }
 
+    @ExceptionHandler(UnauthorizedPostAccessException.class)
+    public ResponseEntity<ErrorResponse> handleUnauthorizedPostAccess(UnauthorizedPostAccessException ex) {
+        log.warn("Unauthorized post access attempt: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(new ErrorResponse(403, "Forbidden", ex.getMessage()));
+    }
+
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<ErrorResponse> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
         log.warn("Invalid path variable type: {}", ex.getMessage());
