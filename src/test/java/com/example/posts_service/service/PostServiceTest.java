@@ -3,6 +3,7 @@ package com.example.posts_service.service;
 import com.example.posts_service.dto.CreatePostRequest;
 import com.example.posts_service.dto.PostResponse;
 import com.example.posts_service.model.Post;
+import com.example.posts_service.model.PostStatus;
 import com.example.posts_service.repository.PostRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -10,11 +11,14 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
@@ -29,6 +33,33 @@ class PostServiceTest {
     @BeforeEach
     void setUp() {
         postService = new PostService(postRepository);
+    }
+
+    @Test
+    void fetchingAllPostsReturnsListMappedToPostResponseInCorrectOrder() {
+        UUID userId = UUID.randomUUID();
+        LocalDateTime older = LocalDateTime.now().minusHours(1);
+        LocalDateTime newer = LocalDateTime.now();
+
+        Post newerPost = new Post(UUID.randomUUID(), "Newer post", null, null, PostStatus.PUBLISHED, userId, newer, newer);
+        Post olderPost = new Post(UUID.randomUUID(), "Older post", null, null, PostStatus.PUBLISHED, userId, older, older);
+
+        when(postRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(newerPost, olderPost));
+
+        List<PostResponse> responses = postService.getAllPosts();
+
+        assertEquals(2, responses.size());
+        assertEquals("Newer post", responses.get(0).getText());
+        assertEquals("Older post", responses.get(1).getText());
+    }
+
+    @Test
+    void fetchingPostsWhenNoneExistReturnsEmptyList() {
+        when(postRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of());
+
+        List<PostResponse> responses = postService.getAllPosts();
+
+        assertTrue(responses.isEmpty());
     }
 
     @Test

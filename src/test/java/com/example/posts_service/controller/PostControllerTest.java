@@ -22,6 +22,7 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -41,6 +42,38 @@ class PostControllerTest {
     @AfterEach
     void clearSecurityContext() {
         SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    void getAllPostsReturns200WithListOfPostResponses() throws Exception {
+        UUID userId = UUID.randomUUID();
+        setAuthenticatedUser(userId);
+
+        List<PostResponse> mockPosts = List.of(
+                new PostResponse(UUID.randomUUID(), "First post", null, null, PostStatus.PUBLISHED, userId, LocalDateTime.now(), LocalDateTime.now()),
+                new PostResponse(UUID.randomUUID(), "Second post", null, null, PostStatus.PUBLISHED, userId, LocalDateTime.now(), LocalDateTime.now())
+        );
+        when(postService.getAllPosts()).thenReturn(mockPosts);
+
+        mockMvc.perform(get("/api/posts")
+                        .header("Authorization", "Bearer " + TestJwtUtil.generateToken(userId, "teacher")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].text").value("First post"))
+                .andExpect(jsonPath("$[1].text").value("Second post"));
+    }
+
+    @Test
+    void getAllPostsReturns200WithEmptyListWhenNoPostsExist() throws Exception {
+        UUID userId = UUID.randomUUID();
+        setAuthenticatedUser(userId);
+
+        when(postService.getAllPosts()).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/posts")
+                        .header("Authorization", "Bearer " + TestJwtUtil.generateToken(userId, "teacher")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
     }
 
     @Test
