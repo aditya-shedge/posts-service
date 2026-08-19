@@ -27,19 +27,19 @@ public class PostService {
     }
 
     public List<PostResponse> getAllPosts() {
-        return postRepository.findAllByOrderByCreatedAtDesc().stream()
+        return postRepository.findAllByStatusOrderByCreatedAtDesc(PostStatus.PUBLISHED).stream()
                 .map(this::toResponse)
                 .toList();
     }
 
     public PostResponse getPostById(UUID postId) {
-        Post post = postRepository.findById(postId)
+        Post post = postRepository.findByIdAndStatus(postId, PostStatus.PUBLISHED)
                 .orElseThrow(() -> new PostNotFoundException(postId));
         return toResponse(post);
     }
 
     public PostResponse updatePost(UUID postId, UpdatePostRequest request, UUID userId) {
-        Post post = postRepository.findById(postId)
+        Post post = postRepository.findByIdAndStatus(postId, PostStatus.PUBLISHED)
                 .orElseThrow(() -> new PostNotFoundException(postId));
 
         if (!post.getCreatedBy().equals(userId)) {
@@ -54,6 +54,19 @@ public class PostService {
         log.info("Updated post: id={}, updatedBy={}", saved.getId(), userId);
 
         return toResponse(saved);
+    }
+
+    public void deletePost(UUID postId, UUID userId) {
+        Post post = postRepository.findByIdAndStatus(postId, PostStatus.PUBLISHED)
+                .orElseThrow(() -> new PostNotFoundException(postId));
+
+        if (!post.getCreatedBy().equals(userId)) {
+            throw new UnauthorizedPostAccessException(postId);
+        }
+
+        post.setStatus(PostStatus.DELETED);
+        postRepository.save(post);
+        log.info("Deleted post: id={}, deletedBy={}", postId, userId);
     }
 
     public PostResponse createPost(CreatePostRequest request, UUID userId) {
