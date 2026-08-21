@@ -8,7 +8,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -22,9 +21,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest
 @AutoConfigureMockMvc
-class DeletePostIntegrationTest {
+class DeletePostIntegrationTest extends BaseIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
@@ -51,12 +49,12 @@ class DeletePostIntegrationTest {
     }
 
     @Test
-    void deleteOwnPostReturns204NoContent() throws Exception {
+    void deleteOwnDraftPostReturns204NoContent() throws Exception {
         UUID userId = UUID.randomUUID();
         String token = TestJwtUtil.generateToken(userId, "teacher");
 
-        Post post = postRepository.save(new Post(UUID.randomUUID(), "Post to delete",
-                null, null, PostStatus.PUBLISHED, userId, null, null));
+        Post post = postRepository.save(new Post(UUID.randomUUID(), "Draft to delete",
+                null, null, PostStatus.DRAFT, userId, null, null));
 
         mockMvc.perform(delete("/api/posts/{postId}", post.getId())
                         .header("Authorization", "Bearer " + token))
@@ -73,8 +71,8 @@ class DeletePostIntegrationTest {
         UUID userId = UUID.randomUUID();
         String token = TestJwtUtil.generateToken(userId, "teacher");
 
-        Post post = postRepository.save(new Post(UUID.randomUUID(), "Post to delete",
-                null, null, PostStatus.PUBLISHED, userId, null, null));
+        Post post = postRepository.save(new Post(UUID.randomUUID(), "Draft to delete",
+                null, null, PostStatus.DRAFT, userId, null, null));
 
         // Delete the post
         mockMvc.perform(delete("/api/posts/{postId}", post.getId())
@@ -92,10 +90,10 @@ class DeletePostIntegrationTest {
         UUID userId = UUID.randomUUID();
         String token = TestJwtUtil.generateToken(userId, "teacher");
 
-        Post post1 = postRepository.save(new Post(UUID.randomUUID(), "Post to keep",
-                null, null, PostStatus.PUBLISHED, userId, null, null));
-        Post post2 = postRepository.save(new Post(UUID.randomUUID(), "Post to delete",
-                null, null, PostStatus.PUBLISHED, userId, null, null));
+        postRepository.save(new Post(UUID.randomUUID(), "Draft to keep",
+                null, null, PostStatus.DRAFT, userId, null, null));
+        Post post2 = postRepository.save(new Post(UUID.randomUUID(), "Draft to delete",
+                null, null, PostStatus.DRAFT, userId, null, null));
 
         // Delete post2
         mockMvc.perform(delete("/api/posts/{postId}", post2.getId())
@@ -107,17 +105,17 @@ class DeletePostIntegrationTest {
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].text").value("Post to keep"));
+                .andExpect(jsonPath("$[0].text").value("Draft to keep"));
     }
 
     @Test
-    void deleteAnotherUsersPostReturns403Forbidden() throws Exception {
+    void deleteAnotherUsersDraftPostReturns403Forbidden() throws Exception {
         UUID ownerId = UUID.randomUUID();
         UUID otherUserId = UUID.randomUUID();
         String otherUserToken = TestJwtUtil.generateToken(otherUserId, "other.teacher");
 
-        Post post = postRepository.save(new Post(UUID.randomUUID(), "Someone else's post",
-                null, null, PostStatus.PUBLISHED, ownerId, null, null));
+        Post post = postRepository.save(new Post(UUID.randomUUID(), "Someone else's draft",
+                null, null, PostStatus.DRAFT, ownerId, null, null));
 
         mockMvc.perform(delete("/api/posts/{postId}", post.getId())
                         .header("Authorization", "Bearer " + otherUserToken))
@@ -144,8 +142,8 @@ class DeletePostIntegrationTest {
         UUID userId = UUID.randomUUID();
         String token = TestJwtUtil.generateToken(userId, "teacher");
 
-        Post post = postRepository.save(new Post(UUID.randomUUID(), "Post to delete twice",
-                null, null, PostStatus.PUBLISHED, userId, null, null));
+        Post post = postRepository.save(new Post(UUID.randomUUID(), "Draft to delete twice",
+                null, null, PostStatus.DRAFT, userId, null, null));
 
         // First delete - should succeed
         mockMvc.perform(delete("/api/posts/{postId}", post.getId())
@@ -167,5 +165,19 @@ class DeletePostIntegrationTest {
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400));
+    }
+
+    @Test
+    void cannotDeletePublishedPost() throws Exception {
+        UUID userId = UUID.randomUUID();
+        String token = TestJwtUtil.generateToken(userId, "teacher");
+
+        Post post = postRepository.save(new Post(UUID.randomUUID(), "Published post",
+                null, null, PostStatus.PUBLISHED, userId, null, null));
+
+        mockMvc.perform(delete("/api/posts/{postId}", post.getId())
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Can only delete DRAFT posts"));
     }
 }

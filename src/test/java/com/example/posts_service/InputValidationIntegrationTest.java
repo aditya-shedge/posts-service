@@ -8,7 +8,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -21,9 +20,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest
 @AutoConfigureMockMvc
-class InputValidationIntegrationTest {
+class InputValidationIntegrationTest extends BaseIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
@@ -102,7 +100,7 @@ class InputValidationIntegrationTest {
         String token = TestJwtUtil.generateToken(userId, "teacher");
 
         Post post = postRepository.save(new Post(UUID.randomUUID(), "Original text",
-                null, null, PostStatus.PUBLISHED, userId, null, null));
+                null, null, PostStatus.DRAFT, userId, null, null));
 
         mockMvc.perform(put("/api/posts/{postId}", post.getId())
                         .header("Authorization", "Bearer " + token)

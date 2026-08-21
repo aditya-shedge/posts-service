@@ -8,7 +8,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -20,9 +19,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest
 @AutoConfigureMockMvc
-class UpdatePostIntegrationTest {
+class UpdatePostIntegrationTest extends BaseIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
@@ -53,12 +51,12 @@ class UpdatePostIntegrationTest {
     }
 
     @Test
-    void updateOwnPostReturns200WithUpdatedFields() throws Exception {
+    void updateOwnDraftPostReturns200WithUpdatedFields() throws Exception {
         UUID userId = UUID.randomUUID();
         String token = TestJwtUtil.generateToken(userId, "teacher");
 
         Post post = postRepository.save(new Post(UUID.randomUUID(), "Original text",
-                "https://old.com/doc.pdf", "Old remarks", PostStatus.PUBLISHED, userId, null, null));
+                "https://old.com/doc.pdf", "Old remarks", PostStatus.DRAFT, userId, null, null));
 
         mockMvc.perform(put("/api/posts/{postId}", post.getId())
                         .header("Authorization", "Bearer " + token)
@@ -83,7 +81,7 @@ class UpdatePostIntegrationTest {
         String token = TestJwtUtil.generateToken(userId, "teacher");
 
         Post post = postRepository.save(new Post(UUID.randomUUID(), "Original text",
-                "https://old.com/doc.pdf", null, PostStatus.PUBLISHED, userId, null, null));
+                "https://old.com/doc.pdf", null, PostStatus.DRAFT, userId, null, null));
 
         mockMvc.perform(put("/api/posts/{postId}", post.getId())
                         .header("Authorization", "Bearer " + token)
@@ -99,13 +97,13 @@ class UpdatePostIntegrationTest {
     }
 
     @Test
-    void updateAnotherUsersPostReturns403Forbidden() throws Exception {
+    void updateAnotherUsersDraftPostReturns403Forbidden() throws Exception {
         UUID ownerId = UUID.randomUUID();
         UUID otherUserId = UUID.randomUUID();
         String otherUserToken = TestJwtUtil.generateToken(otherUserId, "other.teacher");
 
         Post post = postRepository.save(new Post(UUID.randomUUID(), "Original text",
-                null, null, PostStatus.PUBLISHED, ownerId, null, null));
+                null, null, PostStatus.DRAFT, ownerId, null, null));
 
         mockMvc.perform(put("/api/posts/{postId}", post.getId())
                         .header("Authorization", "Bearer " + otherUserToken)
@@ -157,7 +155,7 @@ class UpdatePostIntegrationTest {
         String token = TestJwtUtil.generateToken(userId, "teacher");
 
         Post post = postRepository.save(new Post(UUID.randomUUID(), "Original text",
-                null, null, PostStatus.PUBLISHED, userId, null, null));
+                null, null, PostStatus.DRAFT, userId, null, null));
         String originalCreatedAt = post.getCreatedAt().toString();
 
         Thread.sleep(10);
@@ -178,7 +176,7 @@ class UpdatePostIntegrationTest {
         String token = TestJwtUtil.generateToken(userId, "teacher");
 
         Post post = postRepository.save(new Post(UUID.randomUUID(), "Original text",
-                null, null, PostStatus.PUBLISHED, userId, null, null));
+                null, null, PostStatus.DRAFT, userId, null, null));
 
         Thread.sleep(10);
 
@@ -191,5 +189,23 @@ class UpdatePostIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.updatedAt").value(notNullValue()))
                 .andExpect(jsonPath("$.updatedAt").value(org.hamcrest.Matchers.not(post.getUpdatedAt().toString())));
+    }
+
+    @Test
+    void cannotUpdatePublishedPost() throws Exception {
+        UUID userId = UUID.randomUUID();
+        String token = TestJwtUtil.generateToken(userId, "teacher");
+
+        Post post = postRepository.save(new Post(UUID.randomUUID(), "Published post",
+                null, null, PostStatus.PUBLISHED, userId, null, null));
+
+        mockMvc.perform(put("/api/posts/{postId}", post.getId())
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"text": "Updated text"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Can only edit DRAFT posts"));
     }
 }

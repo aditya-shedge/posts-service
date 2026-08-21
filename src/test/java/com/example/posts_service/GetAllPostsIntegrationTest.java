@@ -8,7 +8,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -18,9 +17,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest
 @AutoConfigureMockMvc
-class GetAllPostsIntegrationTest {
+class GetAllPostsIntegrationTest extends BaseIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
@@ -45,12 +43,12 @@ class GetAllPostsIntegrationTest {
     }
 
     @Test
-    void multiplePostsAreReturnedOrderedByCreationDateDescending() throws Exception {
+    void teacherSeesOwnPostsOrderedByCreationDateDescending() throws Exception {
         UUID userId = UUID.randomUUID();
         String token = TestJwtUtil.generateToken(userId, "teacher");
 
-        Post olderPost = new Post(UUID.randomUUID(), "Older announcement", null, null, PostStatus.PUBLISHED, userId, null, null);
-        Post newerPost = new Post(UUID.randomUUID(), "Newer announcement", null, null, PostStatus.PUBLISHED, userId, null, null);
+        Post olderPost = new Post(UUID.randomUUID(), "Older announcement", null, null, PostStatus.DRAFT, userId, null, null);
+        Post newerPost = new Post(UUID.randomUUID(), "Newer announcement", null, null, PostStatus.DRAFT, userId, null, null);
 
         postRepository.save(olderPost);
         Thread.sleep(10);
@@ -65,13 +63,47 @@ class GetAllPostsIntegrationTest {
     }
 
     @Test
-    void postsFromDifferentCreatorsAreAllReturned() throws Exception {
+    void teacherSeesOnlyOwnPosts() throws Exception {
         UUID teacherOneId = UUID.randomUUID();
         UUID teacherTwoId = UUID.randomUUID();
         String token = TestJwtUtil.generateToken(teacherOneId, "teacher.one");
 
-        postRepository.save(new Post(UUID.randomUUID(), "Post by teacher one", null, null, PostStatus.PUBLISHED, teacherOneId, null, null));
-        postRepository.save(new Post(UUID.randomUUID(), "Post by teacher two", null, null, PostStatus.PUBLISHED, teacherTwoId, null, null));
+        postRepository.save(new Post(UUID.randomUUID(), "Post by teacher one", null, null, PostStatus.DRAFT, teacherOneId, null, null));
+        postRepository.save(new Post(UUID.randomUUID(), "Post by teacher two", null, null, PostStatus.DRAFT, teacherTwoId, null, null));
+
+        mockMvc.perform(get("/api/posts")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].text").value("Post by teacher one"));
+    }
+
+    @Test
+    void teacherSeesOwnPostsAllStatusesExceptDeleted() throws Exception {
+        UUID userId = UUID.randomUUID();
+        String token = TestJwtUtil.generateToken(userId, "teacher");
+
+        postRepository.save(new Post(UUID.randomUUID(), "Draft post", null, null, PostStatus.DRAFT, userId, null, null));
+        postRepository.save(new Post(UUID.randomUUID(), "Published post", null, null, PostStatus.PUBLISHED, userId, null, null));
+        postRepository.save(new Post(UUID.randomUUID(), "Rejected post", null, null, PostStatus.REJECTED, userId, null, null));
+        postRepository.save(new Post(UUID.randomUUID(), "Deleted post", null, null, PostStatus.DELETED, userId, null, null));
+
+        mockMvc.perform(get("/api/posts")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(3));
+    }
+
+    @Test
+    void moderatorSeesAllDraftPosts() throws Exception {
+        UUID moderatorId = UUID.randomUUID();
+        UUID teacherOneId = UUID.randomUUID();
+        UUID teacherTwoId = UUID.randomUUID();
+        String token = TestJwtUtil.generateModeratorToken(moderatorId, "moderator");
+
+        postRepository.save(new Post(UUID.randomUUID(), "Draft by teacher one", null, null, PostStatus.DRAFT, teacherOneId, null, null));
+        postRepository.save(new Post(UUID.randomUUID(), "Draft by teacher two", null, null, PostStatus.DRAFT, teacherTwoId, null, null));
+        postRepository.save(new Post(UUID.randomUUID(), "Published post", null, null, PostStatus.PUBLISHED, teacherOneId, null, null));
 
         mockMvc.perform(get("/api/posts")
                         .header("Authorization", "Bearer " + token))
