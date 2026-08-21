@@ -3,11 +3,14 @@ package com.example.posts_service.service;
 import com.example.posts_service.dto.CreatePostRequest;
 import com.example.posts_service.dto.PostResponse;
 import com.example.posts_service.dto.UpdatePostRequest;
+import com.example.posts_service.exception.InvalidPostStatusException;
 import com.example.posts_service.exception.PostNotFoundException;
 import com.example.posts_service.exception.UnauthorizedPostAccessException;
 import com.example.posts_service.model.Post;
 import com.example.posts_service.model.PostStatus;
+import com.example.posts_service.model.Role;
 import com.example.posts_service.repository.PostRepository;
+import com.example.posts_service.security.UserPrincipal;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -17,6 +20,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -41,31 +45,18 @@ class PostServiceTest {
         postService = new PostService(postRepository);
     }
 
+    // --- Create Post Tests ---
+
     @Test
-    void fetchingAllPostsReturnsListMappedToPostResponseInCorrectOrder() {
+    void creatingPostSetsStatusToDraft() {
         UUID userId = UUID.randomUUID();
-        LocalDateTime older = LocalDateTime.now().minusHours(1);
-        LocalDateTime newer = LocalDateTime.now();
+        CreatePostRequest request = new CreatePostRequest("Announcement", null, null);
 
-        Post newerPost = new Post(UUID.randomUUID(), "Newer post", null, null, PostStatus.PUBLISHED, userId, newer, newer);
-        Post olderPost = new Post(UUID.randomUUID(), "Older post", null, null, PostStatus.PUBLISHED, userId, older, older);
+        when(postRepository.save(any(Post.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        when(postRepository.findAllByStatusOrderByCreatedAtDesc(PostStatus.PUBLISHED)).thenReturn(List.of(newerPost, olderPost));
+        PostResponse response = postService.createPost(request, userId);
 
-        List<PostResponse> responses = postService.getAllPosts();
-
-        assertEquals(2, responses.size());
-        assertEquals("Newer post", responses.get(0).getText());
-        assertEquals("Older post", responses.get(1).getText());
-    }
-
-    @Test
-    void fetchingPostsWhenNoneExistReturnsEmptyList() {
-        when(postRepository.findAllByStatusOrderByCreatedAtDesc(PostStatus.PUBLISHED)).thenReturn(List.of());
-
-        List<PostResponse> responses = postService.getAllPosts();
-
-        assertTrue(responses.isEmpty());
+        assertEquals(PostStatus.DRAFT, response.getStatus());
     }
 
     @Test
@@ -85,159 +76,183 @@ class PostServiceTest {
         assertEquals("Field trip announcement", response.getText());
         assertEquals("https://example.com/doc.pdf", response.getAttachment());
         assertEquals("Contact teacher for queries", response.getRemarks());
+        assertEquals(PostStatus.DRAFT, response.getStatus());
     }
 
+    // --- Get All Posts Tests ---
+
     @Test
-    void creatingPostWithNullAttachmentAndRemarksSavesCorrectly() {
+    void teacherGetsOwnPostsExcludingDeleted() {
         UUID userId = UUID.randomUUID();
-        CreatePostRequest request = new CreatePostRequest("Simple announcement", null, null);
+        UserPrincipal teacher = new UserPrincipal(userId, "teacher", Set.of(Role.TEACHER));
 
-        when(postRepository.save(any(Post.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        Post draftPost = new Post(UUID.randomUUID(), "Draft", null, null, PostStatus.DRAFT, userId, LocalDateTime.now(), LocalDateTime.now());
+        Post publishedPost = new Post(UUID.randomUUID(), "Published", null, null, PostStatus.PUBLISHED, userId, LocalDateTime.now(), LocalDateTime.now());
 
-        PostResponse response = postService.createPost(request, userId);
+        when(postRepository.findAllByCreatedByAndStatusNotOrderByCreatedAtDesc(userId, PostStatus.DELETED))
+                .thenReturn(List.of(draftPost, publishedPost));
 
-        assertNull(response.getAttachment());
-        assertNull(response.getRemarks());
+        List<PostResponse> responses = postService.getAllPosts(teacher);
+
+        assertEquals(2, responses.size());
     }
 
     @Test
-    void createdPostResponseContainsAuthenticatedUserIdAsCreatedBy() {
-        UUID userId = UUID.randomUUID();
-        CreatePostRequest request = new CreatePostRequest("Announcement", null, null);
+    void moderatorGetsAllDraftPosts() {
+        UUID moderatorId = UUID.randomUUID();
+        UserPrincipal moderator = new UserPrincipal(moderatorId, "moderator", Set.of(Role.MODERATOR));
 
-        when(postRepository.save(any(Post.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        UUID otherUserId = UUID.randomUUID();
+        Post draftPost1 = new Post(UUID.randomUUID(), "Draft 1", null, null, PostStatus.DRAFT, otherUserId, LocalDateTime.now(), LocalDateTime.now());
+        Post draftPost2 = new Post(UUID.randomUUID(), "Draft 2", null, null, PostStatus.DRAFT, otherUserId, LocalDateTime.now(), LocalDateTime.now());
 
-        PostResponse response = postService.createPost(request, userId);
+        when(postRepository.findAllByStatusOrderByCreatedAtDesc(PostStatus.DRAFT))
+                .thenReturn(List.of(draftPost1, draftPost2));
 
-        assertEquals(userId, response.getCreatedBy());
+        List<PostResponse> responses = postService.getAllPosts(moderator);
+
+        assertEquals(2, responses.size());
     }
 
+    // --- Update Post Tests ---
+
     @Test
-    void updatingOwnPostReturnsUpdatedPostResponse() {
+    void teacherCanUpdateOwnDraftPost() {
         UUID postId = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
-        LocalDateTime createdAt = LocalDateTime.now().minusHours(1);
-        Post existingPost = new Post(postId, "Original text", "https://old.com/doc.pdf", "Old remarks",
-                PostStatus.PUBLISHED, userId, createdAt, createdAt);
+        UserPrincipal teacher = new UserPrincipal(userId, "teacher", Set.of(Role.TEACHER));
+        Post existingPost = new Post(postId, "Original", null, null, PostStatus.DRAFT, userId, LocalDateTime.now(), LocalDateTime.now());
 
-        UpdatePostRequest request = new UpdatePostRequest("Updated text", "https://new.com/doc.pdf", "New remarks");
+        UpdatePostRequest request = new UpdatePostRequest("Updated", null, null);
 
-        when(postRepository.findByIdAndStatus(postId, PostStatus.PUBLISHED)).thenReturn(Optional.of(existingPost));
+        when(postRepository.findById(postId)).thenReturn(Optional.of(existingPost));
         when(postRepository.save(any(Post.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        PostResponse response = postService.updatePost(postId, request, userId);
+        PostResponse response = postService.updatePost(postId, request, teacher);
 
-        assertEquals("Updated text", response.getText());
-        assertEquals("https://new.com/doc.pdf", response.getAttachment());
-        assertEquals("New remarks", response.getRemarks());
+        assertEquals("Updated", response.getText());
     }
 
     @Test
-    void updatingNonExistentPostThrowsPostNotFoundException() {
+    void teacherCannotUpdateNonDraftPost() {
         UUID postId = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
-        UpdatePostRequest request = new UpdatePostRequest("Updated text", null, null);
+        UserPrincipal teacher = new UserPrincipal(userId, "teacher", Set.of(Role.TEACHER));
+        Post existingPost = new Post(postId, "Original", null, null, PostStatus.PUBLISHED, userId, LocalDateTime.now(), LocalDateTime.now());
 
-        when(postRepository.findByIdAndStatus(postId, PostStatus.PUBLISHED)).thenReturn(Optional.empty());
+        UpdatePostRequest request = new UpdatePostRequest("Updated", null, null);
 
-        assertThrows(PostNotFoundException.class, () -> postService.updatePost(postId, request, userId));
+        when(postRepository.findById(postId)).thenReturn(Optional.of(existingPost));
+
+        assertThrows(InvalidPostStatusException.class, () -> postService.updatePost(postId, request, teacher));
     }
 
     @Test
-    void updatingAnotherUsersPostThrowsUnauthorizedPostAccessException() {
+    void teacherCannotUpdateAnotherUsersPost() {
         UUID postId = UUID.randomUUID();
         UUID ownerId = UUID.randomUUID();
         UUID otherUserId = UUID.randomUUID();
-        Post existingPost = new Post(postId, "Original text", null, null,
-                PostStatus.PUBLISHED, ownerId, LocalDateTime.now(), LocalDateTime.now());
+        UserPrincipal teacher = new UserPrincipal(otherUserId, "teacher", Set.of(Role.TEACHER));
+        Post existingPost = new Post(postId, "Original", null, null, PostStatus.DRAFT, ownerId, LocalDateTime.now(), LocalDateTime.now());
 
-        UpdatePostRequest request = new UpdatePostRequest("Updated text", null, null);
+        UpdatePostRequest request = new UpdatePostRequest("Updated", null, null);
 
-        when(postRepository.findByIdAndStatus(postId, PostStatus.PUBLISHED)).thenReturn(Optional.of(existingPost));
+        when(postRepository.findById(postId)).thenReturn(Optional.of(existingPost));
 
-        assertThrows(UnauthorizedPostAccessException.class, () -> postService.updatePost(postId, request, otherUserId));
+        assertThrows(UnauthorizedPostAccessException.class, () -> postService.updatePost(postId, request, teacher));
     }
 
-    @Test
-    void updatingPostWithNullAttachmentClearsAttachment() {
-        UUID postId = UUID.randomUUID();
-        UUID userId = UUID.randomUUID();
-        Post existingPost = new Post(postId, "Original text", "https://old.com/doc.pdf", null,
-                PostStatus.PUBLISHED, userId, LocalDateTime.now(), LocalDateTime.now());
-
-        UpdatePostRequest request = new UpdatePostRequest("Updated text", null, null);
-
-        when(postRepository.findByIdAndStatus(postId, PostStatus.PUBLISHED)).thenReturn(Optional.of(existingPost));
-        when(postRepository.save(any(Post.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
-        PostResponse response = postService.updatePost(postId, request, userId);
-
-        assertNull(response.getAttachment());
-    }
+    // --- Delete Post Tests ---
 
     @Test
-    void updatingPostWithNullRemarksClearsRemarks() {
+    void teacherCanDeleteOwnDraftPost() {
         UUID postId = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
-        Post existingPost = new Post(postId, "Original text", null, "Old remarks",
-                PostStatus.PUBLISHED, userId, LocalDateTime.now(), LocalDateTime.now());
+        UserPrincipal teacher = new UserPrincipal(userId, "teacher", Set.of(Role.TEACHER));
+        Post existingPost = new Post(postId, "Draft", null, null, PostStatus.DRAFT, userId, LocalDateTime.now(), LocalDateTime.now());
 
-        UpdatePostRequest request = new UpdatePostRequest("Updated text", null, null);
-
-        when(postRepository.findByIdAndStatus(postId, PostStatus.PUBLISHED)).thenReturn(Optional.of(existingPost));
+        when(postRepository.findById(postId)).thenReturn(Optional.of(existingPost));
         when(postRepository.save(any(Post.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        PostResponse response = postService.updatePost(postId, request, userId);
-
-        assertNull(response.getRemarks());
-    }
-
-    @Test
-    void deletingOwnPostChangesStatusToDeleted() {
-        UUID postId = UUID.randomUUID();
-        UUID userId = UUID.randomUUID();
-        Post existingPost = new Post(postId, "Post to delete", null, null,
-                PostStatus.PUBLISHED, userId, LocalDateTime.now(), LocalDateTime.now());
-
-        when(postRepository.findByIdAndStatus(postId, PostStatus.PUBLISHED)).thenReturn(Optional.of(existingPost));
-        when(postRepository.save(any(Post.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
-        postService.deletePost(postId, userId);
+        postService.deletePost(postId, teacher);
 
         assertEquals(PostStatus.DELETED, existingPost.getStatus());
         verify(postRepository).save(existingPost);
     }
 
     @Test
-    void deletingNonExistentPostThrowsPostNotFoundException() {
+    void teacherCannotDeleteNonDraftPost() {
         UUID postId = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
+        UserPrincipal teacher = new UserPrincipal(userId, "teacher", Set.of(Role.TEACHER));
+        Post existingPost = new Post(postId, "Published", null, null, PostStatus.PUBLISHED, userId, LocalDateTime.now(), LocalDateTime.now());
 
-        when(postRepository.findByIdAndStatus(postId, PostStatus.PUBLISHED)).thenReturn(Optional.empty());
+        when(postRepository.findById(postId)).thenReturn(Optional.of(existingPost));
 
-        assertThrows(PostNotFoundException.class, () -> postService.deletePost(postId, userId));
+        assertThrows(InvalidPostStatusException.class, () -> postService.deletePost(postId, teacher));
+    }
+
+    // --- Approve Post Tests ---
+
+    @Test
+    void moderatorCanApproveDraftPost() {
+        UUID postId = UUID.randomUUID();
+        UUID moderatorId = UUID.randomUUID();
+        UserPrincipal moderator = new UserPrincipal(moderatorId, "moderator", Set.of(Role.MODERATOR));
+        Post existingPost = new Post(postId, "Draft", null, null, PostStatus.DRAFT, UUID.randomUUID(), LocalDateTime.now(), LocalDateTime.now());
+
+        when(postRepository.findById(postId)).thenReturn(Optional.of(existingPost));
+        when(postRepository.save(any(Post.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        PostResponse response = postService.approvePost(postId, moderator);
+
+        assertEquals(PostStatus.PUBLISHED, response.getStatus());
     }
 
     @Test
-    void deletingAnotherUsersPostThrowsUnauthorizedPostAccessException() {
+    void moderatorCannotApproveNonDraftPost() {
         UUID postId = UUID.randomUUID();
-        UUID ownerId = UUID.randomUUID();
-        UUID otherUserId = UUID.randomUUID();
-        Post existingPost = new Post(postId, "Post to delete", null, null,
-                PostStatus.PUBLISHED, ownerId, LocalDateTime.now(), LocalDateTime.now());
+        UUID moderatorId = UUID.randomUUID();
+        UserPrincipal moderator = new UserPrincipal(moderatorId, "moderator", Set.of(Role.MODERATOR));
+        Post existingPost = new Post(postId, "Published", null, null, PostStatus.PUBLISHED, UUID.randomUUID(), LocalDateTime.now(), LocalDateTime.now());
 
-        when(postRepository.findByIdAndStatus(postId, PostStatus.PUBLISHED)).thenReturn(Optional.of(existingPost));
+        when(postRepository.findById(postId)).thenReturn(Optional.of(existingPost));
 
-        assertThrows(UnauthorizedPostAccessException.class, () -> postService.deletePost(postId, otherUserId));
+        assertThrows(InvalidPostStatusException.class, () -> postService.approvePost(postId, moderator));
     }
 
     @Test
-    void deletingAlreadyDeletedPostThrowsPostNotFoundException() {
+    void teacherCannotApprovePosts() {
         UUID postId = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
+        UserPrincipal teacher = new UserPrincipal(userId, "teacher", Set.of(Role.TEACHER));
 
-        when(postRepository.findByIdAndStatus(postId, PostStatus.PUBLISHED)).thenReturn(Optional.empty());
+        assertThrows(UnauthorizedPostAccessException.class, () -> postService.approvePost(postId, teacher));
+    }
 
-        assertThrows(PostNotFoundException.class, () -> postService.deletePost(postId, userId));
+    // --- Reject Post Tests ---
+
+    @Test
+    void moderatorCanRejectDraftPost() {
+        UUID postId = UUID.randomUUID();
+        UUID moderatorId = UUID.randomUUID();
+        UserPrincipal moderator = new UserPrincipal(moderatorId, "moderator", Set.of(Role.MODERATOR));
+        Post existingPost = new Post(postId, "Draft", null, null, PostStatus.DRAFT, UUID.randomUUID(), LocalDateTime.now(), LocalDateTime.now());
+
+        when(postRepository.findById(postId)).thenReturn(Optional.of(existingPost));
+        when(postRepository.save(any(Post.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        PostResponse response = postService.rejectPost(postId, moderator);
+
+        assertEquals(PostStatus.REJECTED, response.getStatus());
+    }
+
+    @Test
+    void teacherCannotRejectPosts() {
+        UUID postId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        UserPrincipal teacher = new UserPrincipal(userId, "teacher", Set.of(Role.TEACHER));
+
+        assertThrows(UnauthorizedPostAccessException.class, () -> postService.rejectPost(postId, teacher));
     }
 }

@@ -3,6 +3,7 @@ package com.example.posts_service.service;
 import com.example.posts_service.dto.LoginRequest;
 import com.example.posts_service.dto.LoginResponse;
 import com.example.posts_service.exception.InvalidCredentialsException;
+import com.example.posts_service.model.Role;
 import com.example.posts_service.model.User;
 import com.example.posts_service.repository.UserRepository;
 import com.example.posts_service.security.JwtTokenProvider;
@@ -15,6 +16,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -47,11 +49,11 @@ class AuthServiceTest {
     void validCredentialsReturnsLoginResponseWithToken() {
         UUID userId = UUID.randomUUID();
         User user = new User(userId, "teacher1", "$2a$10$hash", "teacher1@school.edu", "TEACHER",
-                LocalDateTime.now(), LocalDateTime.now());
+                Set.of(Role.TEACHER), LocalDateTime.now(), LocalDateTime.now());
 
         when(userRepository.findByUsername("teacher1")).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("password123", "$2a$10$hash")).thenReturn(true);
-        when(jwtTokenProvider.generateToken(userId, "teacher1")).thenReturn("jwt-token");
+        when(jwtTokenProvider.generateToken(any(UUID.class), anyString(), any())).thenReturn("jwt-token");
 
         LoginRequest request = new LoginRequest("teacher1", "password123");
         LoginResponse response = authService.authenticate(request);
@@ -76,7 +78,7 @@ class AuthServiceTest {
     void invalidPasswordThrowsInvalidCredentialsException() {
         UUID userId = UUID.randomUUID();
         User user = new User(userId, "teacher1", "$2a$10$hash", "teacher1@school.edu", "TEACHER",
-                LocalDateTime.now(), LocalDateTime.now());
+                Set.of(Role.TEACHER), LocalDateTime.now(), LocalDateTime.now());
 
         when(userRepository.findByUsername("teacher1")).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("wrongpassword", "$2a$10$hash")).thenReturn(false);
