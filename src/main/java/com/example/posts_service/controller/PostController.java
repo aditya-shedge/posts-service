@@ -32,13 +32,16 @@ public class PostController {
     }
 
     @GetMapping
-    public ResponseEntity<List<PostResponse>> getAllPosts() {
-        return ResponseEntity.ok(postService.getAllPosts());
+    public ResponseEntity<List<PostResponse>> getAllPosts(
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ResponseEntity.ok(postService.getAllPosts(principal));
     }
 
     @GetMapping("/{postId}")
-    public ResponseEntity<PostResponse> getPostById(@PathVariable UUID postId) {
-        return ResponseEntity.ok(postService.getPostById(postId));
+    public ResponseEntity<PostResponse> getPostById(
+            @PathVariable UUID postId,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ResponseEntity.ok(postService.getPostById(postId, principal));
     }
 
     @PostMapping
@@ -54,7 +57,7 @@ public class PostController {
             @PathVariable UUID postId,
             @Valid @RequestBody UpdatePostRequest request,
             @AuthenticationPrincipal UserPrincipal principal) {
-        PostResponse response = postService.updatePost(postId, request, principal.getUserId());
+        PostResponse response = postService.updatePost(postId, request, principal);
         return ResponseEntity.ok(response);
     }
 
@@ -62,7 +65,23 @@ public class PostController {
     public ResponseEntity<Void> deletePost(
             @PathVariable UUID postId,
             @AuthenticationPrincipal UserPrincipal principal) {
-        postService.deletePost(postId, principal.getUserId());
+        postService.deletePost(postId, principal);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{postId}/approve")
+    public ResponseEntity<PostResponse> approvePost(
+            @PathVariable UUID postId,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        PostResponse response = postService.approvePost(postId, principal);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/{postId}/reject")
+    public ResponseEntity<PostResponse> rejectPost(
+            @PathVariable UUID postId,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        PostResponse response = postService.rejectPost(postId, principal);
+        return ResponseEntity.ok(response);
     }
 }
