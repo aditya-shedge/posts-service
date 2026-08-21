@@ -34,8 +34,8 @@ public class AuthService {
             throw new InvalidCredentialsException();
         }
 
-        String token = jwtTokenProvider.generateToken(user.getId(), user.getUsername());
-        log.info("User logged in: username={}", user.getUsername());
+        String token = jwtTokenProvider.generateToken(user.getId(), user.getUsername(), user.getRoles());
+        log.info("User logged in: username={}, roles={}", user.getUsername(), user.getRoles());
 
         return new LoginResponse(token, "Bearer", user.getId(), user.getUsername());
     }

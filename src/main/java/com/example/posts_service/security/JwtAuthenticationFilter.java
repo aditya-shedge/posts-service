@@ -1,5 +1,6 @@
 package com.example.posts_service.security;
 
+import com.example.posts_service.model.Role;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -10,7 +11,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Component
@@ -31,9 +32,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (token != null && tokenProvider.validateToken(token)) {
             UUID userId = tokenProvider.getUserIdFromToken(token);
             String username = tokenProvider.getUsernameFromToken(token);
-            UserPrincipal principal = new UserPrincipal(userId, username);
+            Set<Role> roles = tokenProvider.getRolesFromToken(token);
+            UserPrincipal principal = new UserPrincipal(userId, username, roles);
             UsernamePasswordAuthenticationToken auth =
-                    new UsernamePasswordAuthenticationToken(principal, null, List.of());
+                    new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities());
             SecurityContextHolder.getContext().setAuthentication(auth);
         }
 

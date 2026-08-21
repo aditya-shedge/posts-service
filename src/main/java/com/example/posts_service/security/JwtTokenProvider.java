@@ -1,5 +1,6 @@
 package com.example.posts_service.security;
 
+import com.example.posts_service.model.Role;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
@@ -12,7 +13,10 @@ import org.springframework.stereotype.Component;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Component
 public class JwtTokenProvider {
@@ -30,13 +34,27 @@ public class JwtTokenProvider {
         return parseClaims(token).get("username", String.class);
     }
 
-    public String generateToken(UUID userId, String username) {
+    @SuppressWarnings("unchecked")
+    public Set<Role> getRolesFromToken(String token) {
+        List<String> roleNames = parseClaims(token).get("roles", List.class);
+        if (roleNames == null) {
+            return Set.of();
+        }
+        return roleNames.stream()
+                .map(Role::valueOf)
+                .collect(Collectors.toSet());
+    }
+
+    public String generateToken(UUID userId, String username, Set<Role> roles) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + 86400000); // 24 hours
+
+        List<String> roleNames = roles.stream().map(Role::name).toList();
 
         return Jwts.builder()
                 .subject(userId.toString())
                 .claim("username", username)
+                .claim("roles", roleNames)
                 .issuedAt(now)
                 .expiration(expiry)
                 .signWith(signingKey())
