@@ -39,6 +39,13 @@ public class GlobalExceptionHandler {
                 .body(new ErrorResponse(401, "Unauthorized", ex.getMessage()));
     }
 
+    @ExceptionHandler(InvalidPostStatusException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidPostStatus(InvalidPostStatusException ex) {
+        log.warn("Invalid post status operation: {}", ex.getMessage());
+        return ResponseEntity.badRequest()
+                .body(new ErrorResponse(400, "Bad Request", ex.getMessage()));
+    }
+
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<ErrorResponse> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
         log.warn("Invalid path variable type: {}", ex.getMessage());
