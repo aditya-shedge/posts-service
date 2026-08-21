@@ -4,7 +4,6 @@ import com.example.posts_service.model.Post;
 import com.example.posts_service.model.PostStatus;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
@@ -16,9 +15,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@SpringBootTest
 @Transactional
-class PostRepositoryTest {
+class PostRepositoryTest extends com.example.posts_service.BaseIntegrationTest {
 
     @Autowired
     private PostRepository postRepository;
