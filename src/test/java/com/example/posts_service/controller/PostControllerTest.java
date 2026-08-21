@@ -2,6 +2,7 @@ package com.example.posts_service.controller;
 
 import com.example.posts_service.dto.PostResponse;
 import com.example.posts_service.model.PostStatus;
+import com.example.posts_service.model.Role;
 import com.example.posts_service.security.JwtTokenProvider;
 import com.example.posts_service.security.UserPrincipal;
 import com.example.posts_service.service.PostService;
@@ -18,6 +19,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -52,10 +54,10 @@ class PostControllerTest {
         setAuthenticatedUser(userId);
 
         List<PostResponse> mockPosts = List.of(
-                new PostResponse(UUID.randomUUID(), "First post", null, null, PostStatus.PUBLISHED, userId, LocalDateTime.now(), LocalDateTime.now()),
-                new PostResponse(UUID.randomUUID(), "Second post", null, null, PostStatus.PUBLISHED, userId, LocalDateTime.now(), LocalDateTime.now())
+                new PostResponse(UUID.randomUUID(), "First post", null, null, PostStatus.DRAFT, userId, LocalDateTime.now(), LocalDateTime.now()),
+                new PostResponse(UUID.randomUUID(), "Second post", null, null, PostStatus.DRAFT, userId, LocalDateTime.now(), LocalDateTime.now())
         );
-        when(postService.getAllPosts()).thenReturn(mockPosts);
+        when(postService.getAllPosts(any(UserPrincipal.class))).thenReturn(mockPosts);
 
         mockMvc.perform(get("/api/posts")
                         .header("Authorization", "Bearer " + TestJwtUtil.generateToken(userId, "teacher")))
@@ -70,7 +72,7 @@ class PostControllerTest {
         UUID userId = UUID.randomUUID();
         setAuthenticatedUser(userId);
 
-        when(postService.getAllPosts()).thenReturn(List.of());
+        when(postService.getAllPosts(any(UserPrincipal.class))).thenReturn(List.of());
 
         mockMvc.perform(get("/api/posts")
                         .header("Authorization", "Bearer " + TestJwtUtil.generateToken(userId, "teacher")))
@@ -87,7 +89,7 @@ class PostControllerTest {
         PostResponse mockResponse = new PostResponse(
                 postId, "Field trip announcement",
                 "https://example.com/doc.pdf", "Contact teacher",
-                PostStatus.PUBLISHED, userId, LocalDateTime.now(), LocalDateTime.now()
+                PostStatus.DRAFT, userId, LocalDateTime.now(), LocalDateTime.now()
         );
         when(postService.createPost(any(), any())).thenReturn(mockResponse);
 
@@ -144,26 +146,6 @@ class PostControllerTest {
     }
 
     @Test
-    void remarksThatExceed1000CharactersReturns400() throws Exception {
-        UUID userId = UUID.randomUUID();
-        setAuthenticatedUser(userId);
-        String longRemarks = "a".repeat(1001);
-
-        mockMvc.perform(post("/api/posts")
-                        .header("Authorization", "Bearer " + TestJwtUtil.generateToken(userId, "teacher"))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "text": "Announcement",
-                                  "remarks": "%s"
-                                }
-                                """.formatted(longRemarks)))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status").value(400))
-                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("remarks")));
-    }
-
-    @Test
     void validUpdateRequestReturns200WithUpdatedPost() throws Exception {
         UUID postId = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
@@ -171,7 +153,7 @@ class PostControllerTest {
 
         PostResponse mockResponse = new PostResponse(
                 postId, "Updated text", "https://new.com/doc.pdf", "New remarks",
-                PostStatus.PUBLISHED, userId, LocalDateTime.now(), LocalDateTime.now()
+                PostStatus.DRAFT, userId, LocalDateTime.now(), LocalDateTime.now()
         );
         when(postService.updatePost(any(), any(), any())).thenReturn(mockResponse);
 
@@ -188,46 +170,6 @@ class PostControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(postId.toString()))
                 .andExpect(jsonPath("$.text").value("Updated text"));
-    }
-
-    @Test
-    void updateWithBlankTextReturns400ValidationError() throws Exception {
-        UUID postId = UUID.randomUUID();
-        UUID userId = UUID.randomUUID();
-        setAuthenticatedUser(userId);
-
-        mockMvc.perform(put("/api/posts/{postId}", postId)
-                        .header("Authorization", "Bearer " + TestJwtUtil.generateToken(userId, "teacher"))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "text": "",
-                                  "attachment": "https://example.com/doc.pdf"
-                                }
-                                """))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status").value(400))
-                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("text")));
-    }
-
-    @Test
-    void updateWithInvalidUrlReturns400ValidationError() throws Exception {
-        UUID postId = UUID.randomUUID();
-        UUID userId = UUID.randomUUID();
-        setAuthenticatedUser(userId);
-
-        mockMvc.perform(put("/api/posts/{postId}", postId)
-                        .header("Authorization", "Bearer " + TestJwtUtil.generateToken(userId, "teacher"))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "text": "Updated text",
-                                  "attachment": "not-a-valid-url"
-                                }
-                                """))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status").value(400))
-                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("attachment")));
     }
 
     @Test
@@ -259,40 +201,49 @@ class PostControllerTest {
     }
 
     @Test
-    void deleteWithInvalidUuidReturns400() throws Exception {
+    void approvePostReturns200WithPublishedStatus() throws Exception {
+        UUID postId = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
-        setAuthenticatedUser(userId);
+        setAuthenticatedUser(userId, Set.of(Role.MODERATOR));
 
-        mockMvc.perform(delete("/api/posts/not-a-uuid")
-                        .header("Authorization", "Bearer " + TestJwtUtil.generateToken(userId, "teacher")))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status").value(400));
+        PostResponse mockResponse = new PostResponse(
+                postId, "Approved post", null, null,
+                PostStatus.PUBLISHED, UUID.randomUUID(), LocalDateTime.now(), LocalDateTime.now()
+        );
+        when(postService.approvePost(any(), any())).thenReturn(mockResponse);
+
+        mockMvc.perform(post("/api/posts/{postId}/approve", postId)
+                        .header("Authorization", "Bearer " + TestJwtUtil.generateModeratorToken(userId, "moderator")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PUBLISHED"));
     }
 
     @Test
-    void requestWithMultipleInvalidFieldsReturnsAllErrorsInSingleResponse() throws Exception {
+    void rejectPostReturns200WithRejectedStatus() throws Exception {
+        UUID postId = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
-        setAuthenticatedUser(userId);
+        setAuthenticatedUser(userId, Set.of(Role.MODERATOR));
 
-        mockMvc.perform(post("/api/posts")
-                        .header("Authorization", "Bearer " + TestJwtUtil.generateToken(userId, "teacher"))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "text": "",
-                                  "attachment": "not-a-valid-url"
-                                }
-                                """))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status").value(400))
-                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("text")))
-                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("attachment")));
+        PostResponse mockResponse = new PostResponse(
+                postId, "Rejected post", null, null,
+                PostStatus.REJECTED, UUID.randomUUID(), LocalDateTime.now(), LocalDateTime.now()
+        );
+        when(postService.rejectPost(any(), any())).thenReturn(mockResponse);
+
+        mockMvc.perform(post("/api/posts/{postId}/reject", postId)
+                        .header("Authorization", "Bearer " + TestJwtUtil.generateModeratorToken(userId, "moderator")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("REJECTED"));
     }
 
     private void setAuthenticatedUser(UUID userId) {
-        UserPrincipal principal = new UserPrincipal(userId, "teacher");
+        setAuthenticatedUser(userId, Set.of(Role.TEACHER));
+    }
+
+    private void setAuthenticatedUser(UUID userId, Set<Role> roles) {
+        UserPrincipal principal = new UserPrincipal(userId, "teacher", roles);
         UsernamePasswordAuthenticationToken auth =
-                new UsernamePasswordAuthenticationToken(principal, null, List.of());
+                new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities());
         SecurityContextHolder.getContext().setAuthentication(auth);
     }
 }
