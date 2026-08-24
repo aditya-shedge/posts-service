@@ -1,6 +1,7 @@
 package com.example.posts_service.exception;
 
 import com.example.posts_service.dto.ErrorResponse;
+import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -10,6 +11,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.util.stream.Collectors;
 
@@ -46,6 +48,20 @@ public class GlobalExceptionHandler {
                 .body(new ErrorResponse(400, "Bad Request", ex.getMessage()));
     }
 
+    @ExceptionHandler(InvalidFileException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidFile(InvalidFileException ex) {
+        log.warn("Invalid file: {}", ex.getMessage());
+        return ResponseEntity.badRequest()
+                .body(new ErrorResponse(400, "Bad Request", ex.getMessage()));
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ErrorResponse> handleMaxUploadSizeExceeded(MaxUploadSizeExceededException ex) {
+        log.warn("File upload size exceeded: {}", ex.getMessage());
+        return ResponseEntity.badRequest()
+                .body(new ErrorResponse(400, "Bad Request", "File size exceeds maximum allowed size of 5 MB"));
+    }
+
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<ErrorResponse> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
         log.warn("Invalid path variable type: {}", ex.getMessage());
@@ -61,6 +77,23 @@ public class GlobalExceptionHandler {
 
         log.warn("Validation failed: {}", message);
         return ResponseEntity.badRequest().body(new ErrorResponse(400, "Bad Request", message));
+    }
+
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ErrorResponse> handleConstraintViolation(ConstraintViolationException ex) {
+        String message = ex.getConstraintViolations().stream()
+                .map(violation -> violation.getPropertyPath() + ": " + violation.getMessage())
+                .collect(Collectors.joining(", "));
+
+        log.warn("Constraint violation: {}", message);
+        return ResponseEntity.badRequest().body(new ErrorResponse(400, "Bad Request", message));
+    }
+
+    @ExceptionHandler(org.springframework.web.bind.MissingServletRequestParameterException.class)
+    public ResponseEntity<ErrorResponse> handleMissingParameter(
+            org.springframework.web.bind.MissingServletRequestParameterException ex) {
+        log.warn("Missing request parameter: {}", ex.getMessage());
+        return ResponseEntity.badRequest().body(new ErrorResponse(400, "Bad Request", ex.getMessage()));
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
