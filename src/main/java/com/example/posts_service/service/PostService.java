@@ -8,8 +8,10 @@ import com.example.posts_service.exception.PostNotFoundException;
 import com.example.posts_service.exception.UnauthorizedPostAccessException;
 import com.example.posts_service.model.AttachmentStatus;
 import com.example.posts_service.model.Post;
+import com.example.posts_service.model.PostAttachment;
 import com.example.posts_service.model.PostStatus;
 import com.example.posts_service.model.Role;
+import com.example.posts_service.repository.AttachmentRepository;
 import com.example.posts_service.repository.PostRepository;
 import com.example.posts_service.security.UserPrincipal;
 import org.slf4j.Logger;
@@ -32,6 +34,7 @@ public class PostService {
     private static final Logger log = LoggerFactory.getLogger(PostService.class);
 
     private final PostRepository postRepository;
+    private final AttachmentRepository attachmentRepository;
     private final CloudinaryService cloudinaryService;
     private final FileValidationService fileValidationService;
 
@@ -39,21 +42,21 @@ public class PostService {
     private String tempDir;
 
     public PostService(PostRepository postRepository,
+                       AttachmentRepository attachmentRepository,
                        CloudinaryService cloudinaryService,
                        FileValidationService fileValidationService) {
         this.postRepository = postRepository;
+        this.attachmentRepository = attachmentRepository;
         this.cloudinaryService = cloudinaryService;
         this.fileValidationService = fileValidationService;
     }
 
     public List<PostResponse> getAllPosts(UserPrincipal principal) {
         if (principal.hasRole(Role.MODERATOR)) {
-            // Moderators see all DRAFT posts for review
             return postRepository.findAllByStatusOrderByCreatedAtDesc(PostStatus.DRAFT).stream()
                     .map(this::toResponse)
                     .toList();
         } else {
-            // Teachers see their own posts (all statuses except DELETED)
             return postRepository.findAllByCreatedByAndStatusNotOrderByCreatedAtDesc(
                             principal.getUserId(), PostStatus.DELETED).stream()
                     .map(this::toResponse)
@@ -65,7 +68,6 @@ public class PostService {
         Post post = postRepository.findById(postId)
                 .orElseThrow(() -> new PostNotFoundException(postId));
 
-        // Check access: own post or PUBLISHED post or moderator
         if (post.getStatus() == PostStatus.DELETED) {
             throw new PostNotFoundException(postId);
         }
@@ -81,11 +83,45 @@ public class PostService {
         return toResponse(post);
     }
 
+    public PostResponse createPost(String text, String remarks, MultipartFile attachment, UUID userId) {
+        Post post = new Post();
+        post.setId(UUID.randomUUID());
+        post.setText(text);
+        post.setRemarks(remarks);
+        post.setStatus(PostStatus.DRAFT);
+        post.setCreatedBy(userId);
+        postRepository.save(post);
+
+        if (attachment != null && !attachment.isEmpty()) {
+            fileValidationService.validate(attachment);
+            PostAttachment postAttachment = new PostAttachment(UUID.randomUUID(), post.getId());
+            postAttachment.setFilename(attachment.getOriginalFilename());
+
+            try {
+                CloudinaryUploadResult result = cloudinaryService.upload(attachment);
+                postAttachment.setUrl(result.getUrl());
+                postAttachment.setPublicId(result.getPublicId());
+                postAttachment.setStatus(AttachmentStatus.UPLOADED);
+                log.info("Attachment uploaded: postId={}, publicId={}", post.getId(), result.getPublicId());
+            } catch (IOException e) {
+                log.warn("Cloudinary upload failed, queuing for retry: postId={}", post.getId());
+                postAttachment.setStatus(AttachmentStatus.PENDING);
+                postAttachment.setRetryCount(0);
+                postAttachment.setNextRetryAt(LocalDateTime.now().plusMinutes(1));
+                saveTempFile(postAttachment, attachment, post.getId());
+            }
+
+            attachmentRepository.save(postAttachment);
+        }
+
+        log.info("Created post: id={}, createdBy={}", post.getId(), userId);
+        return toResponse(post);
+    }
+
     public PostResponse updatePost(UUID postId, UpdatePostRequest request, UserPrincipal principal) {
         Post post = postRepository.findById(postId)
                 .orElseThrow(() -> new PostNotFoundException(postId));
 
-        // Treat DELETED posts as not found
         if (post.getStatus() == PostStatus.DELETED) {
             throw new PostNotFoundException(postId);
         }
@@ -99,7 +135,6 @@ public class PostService {
         }
 
         post.setText(request.getText());
-        post.setAttachment(request.getAttachment());
         post.setRemarks(request.getRemarks());
 
         Post saved = postRepository.save(post);
@@ -112,7 +147,6 @@ public class PostService {
         Post post = postRepository.findById(postId)
                 .orElseThrow(() -> new PostNotFoundException(postId));
 
-        // Treat DELETED posts as not found
         if (post.getStatus() == PostStatus.DELETED) {
             throw new PostNotFoundException(postId);
         }
@@ -128,56 +162,6 @@ public class PostService {
         post.setStatus(PostStatus.DELETED);
         postRepository.save(post);
         log.info("Deleted post: id={}, deletedBy={}", postId, principal.getUserId());
-    }
-
-    public PostResponse createPost(String text, String remarks, MultipartFile attachment, UUID userId) {
-        Post post = new Post();
-        post.setId(UUID.randomUUID());
-        post.setText(text);
-        post.setRemarks(remarks);
-        post.setStatus(PostStatus.DRAFT);
-        post.setCreatedBy(userId);
-
-        if (attachment != null && !attachment.isEmpty()) {
-            fileValidationService.validate(attachment);
-            post.setAttachmentFilename(attachment.getOriginalFilename());
-
-            try {
-                CloudinaryUploadResult result = cloudinaryService.upload(attachment);
-                post.setAttachment(result.getUrl());
-                post.setAttachmentPublicId(result.getPublicId());
-                post.setAttachmentStatus(AttachmentStatus.UPLOADED);
-                log.info("Attachment uploaded: postId={}, publicId={}", post.getId(), result.getPublicId());
-            } catch (IOException e) {
-                log.warn("Cloudinary upload failed, queuing for retry: postId={}, error={}", post.getId(), e.getMessage());
-                post.setAttachmentStatus(AttachmentStatus.PENDING);
-                post.setAttachmentRetryCount(0);
-                post.setAttachmentNextRetryAt(LocalDateTime.now().plusMinutes(1));
-                saveAttachmentToTemp(post, attachment);
-            }
-        }
-
-        Post saved = postRepository.save(post);
-        log.info("Created post: id={}, createdBy={}, attachmentStatus={}", saved.getId(), userId, saved.getAttachmentStatus());
-
-        return toResponse(saved);
-    }
-
-    private void saveAttachmentToTemp(Post post, MultipartFile file) {
-        try {
-            Path tempDirPath = Paths.get(tempDir);
-            Files.createDirectories(tempDirPath);
-
-            String filename = post.getId() + "_" + file.getOriginalFilename();
-            Path tempFile = tempDirPath.resolve(filename);
-            file.transferTo(tempFile);
-
-            post.setAttachmentTempPath(tempFile.toString());
-            log.info("Saved attachment to temp: path={}", tempFile);
-        } catch (IOException e) {
-            log.error("Failed to save attachment to temp: postId={}, error={}", post.getId(), e.getMessage());
-            post.setAttachmentStatus(AttachmentStatus.FAILED);
-        }
     }
 
     public PostResponse approvePost(UUID postId, UserPrincipal principal) {
@@ -218,13 +202,31 @@ public class PostService {
         return toResponse(saved);
     }
 
+    private void saveTempFile(PostAttachment attachment, MultipartFile file, UUID postId) {
+        try {
+            Path tempDirPath = Paths.get(tempDir);
+            Files.createDirectories(tempDirPath);
+
+            String filename = postId + "_" + file.getOriginalFilename();
+            Path tempFile = tempDirPath.resolve(filename);
+            file.transferTo(tempFile);
+
+            attachment.setTempPath(tempFile.toString());
+            log.info("Saved attachment to temp: path={}", tempFile);
+        } catch (IOException e) {
+            log.error("Failed to save attachment to temp: postId={}, error={}", postId, e.getMessage());
+            attachment.setStatus(AttachmentStatus.FAILED);
+        }
+    }
+
     private PostResponse toResponse(Post post) {
+        PostAttachment attachment = attachmentRepository.findByPostId(post.getId()).orElse(null);
         return new PostResponse(
                 post.getId(),
                 post.getText(),
-                post.getAttachment(),
-                post.getAttachmentFilename(),
-                post.getAttachmentStatus(),
+                attachment != null ? attachment.getUrl() : null,
+                attachment != null ? attachment.getFilename() : null,
+                attachment != null ? attachment.getStatus() : null,
                 post.getRemarks(),
                 post.getStatus(),
                 post.getCreatedBy(),
