@@ -1,15 +1,14 @@
 package com.example.posts_service.service;
 
-import com.example.posts_service.dto.CloudinaryUploadResult;
 import com.example.posts_service.dto.PostResponse;
 import com.example.posts_service.dto.UpdatePostRequest;
 import com.example.posts_service.exception.InvalidPostStatusException;
 import com.example.posts_service.exception.PostNotFoundException;
 import com.example.posts_service.exception.UnauthorizedPostAccessException;
-import com.example.posts_service.model.AttachmentStatus;
 import com.example.posts_service.model.Post;
 import com.example.posts_service.model.PostStatus;
 import com.example.posts_service.model.Role;
+import com.example.posts_service.repository.AttachmentRepository;
 import com.example.posts_service.repository.PostRepository;
 import com.example.posts_service.security.UserPrincipal;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,6 +40,9 @@ class PostServiceTest {
     private PostRepository postRepository;
 
     @Mock
+    private AttachmentRepository attachmentRepository;
+
+    @Mock
     private CloudinaryService cloudinaryService;
 
     @Mock
@@ -49,8 +51,16 @@ class PostServiceTest {
     private PostService postService;
 
     @BeforeEach
-    void setUp() {
-        postService = new PostService(postRepository, cloudinaryService, fileValidationService);
+    void setUp() throws Exception {
+        postService = new PostService(postRepository, attachmentRepository, cloudinaryService, fileValidationService);
+        // inject tempDir since @Value is not processed outside Spring context
+        java.lang.reflect.Field field = PostService.class.getDeclaredField("tempDir");
+        field.setAccessible(true);
+        field.set(postService, System.getProperty("java.io.tmpdir") + "/posts-attachments-test");
+        // default: no attachment found for any post (lenient to avoid unused stub errors)
+        org.mockito.Mockito.lenient()
+                .when(attachmentRepository.findByPostId(any()))
+                .thenReturn(Optional.empty());
     }
 
     // --- Create Post Tests ---
@@ -68,18 +78,50 @@ class PostServiceTest {
     }
 
     @Test
-    void creatingPostWithAttachmentUploadsToCloudinary() throws IOException {
+    void creatingPostWithAttachmentValidatesFile() throws IOException {
         UUID userId = UUID.randomUUID();
         MockMultipartFile file = new MockMultipartFile("attachment", "test.jpg", "image/jpeg", "content".getBytes());
 
-        when(cloudinaryService.upload(file)).thenReturn(new CloudinaryUploadResult("https://cloudinary.com/test.jpg", "posts/abc123"));
         when(postRepository.save(any(Post.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(cloudinaryService.upload(any())).thenReturn(new com.example.posts_service.dto.CloudinaryUploadResult("https://cloudinary.com/test.jpg", "posts/abc123"));
+        when(attachmentRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        postService.createPost("Announcement", null, file, userId);
+
+        verify(fileValidationService).validate(file);
+    }
+
+    @Test
+    void creatingPostWithAttachmentUploadsToCloudinaryAndSavesAttachment() throws IOException {
+        UUID userId = UUID.randomUUID();
+        MockMultipartFile file = new MockMultipartFile("attachment", "test.jpg", "image/jpeg", "content".getBytes());
+
+        when(postRepository.save(any(Post.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(cloudinaryService.upload(any())).thenReturn(new com.example.posts_service.dto.CloudinaryUploadResult("https://cloudinary.com/test.jpg", "posts/abc123"));
+        when(attachmentRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        postService.createPost("Announcement", null, file, userId);
+
+        verify(attachmentRepository).save(any());
+    }
+
+    @Test
+    void cloudinaryFailureSetsAttachmentStatusToPending() throws IOException {
+        UUID userId = UUID.randomUUID();
+        MockMultipartFile file = new MockMultipartFile("attachment", "test.jpg", "image/jpeg", "content".getBytes());
+
+        when(postRepository.save(any(Post.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(cloudinaryService.upload(any())).thenThrow(new IOException("Cloudinary unavailable"));
+        when(attachmentRepository.save(any())).thenAnswer(invocation -> {
+            com.example.posts_service.model.PostAttachment saved = invocation.getArgument(0);
+            when(attachmentRepository.findByPostId(any())).thenReturn(Optional.of(saved));
+            return saved;
+        });
 
         PostResponse response = postService.createPost("Announcement", null, file, userId);
 
-        assertEquals("https://cloudinary.com/test.jpg", response.getAttachment());
+        assertEquals(com.example.posts_service.model.AttachmentStatus.PENDING, response.getAttachmentStatus());
         assertEquals("test.jpg", response.getAttachmentFilename());
-        assertEquals(AttachmentStatus.UPLOADED, response.getAttachmentStatus());
     }
 
     @Test

@@ -34,7 +34,6 @@ class PostRepositoryTest extends com.example.posts_service.BaseIntegrationTest {
         assertTrue(retrieved.isPresent());
         assertEquals(id, retrieved.get().getId());
         assertEquals("Field trip announcement", retrieved.get().getText());
-        assertEquals("https://example.com/doc.pdf", retrieved.get().getAttachment());
         assertEquals("Contact teacher for queries", retrieved.get().getRemarks());
         assertEquals(createdBy, retrieved.get().getCreatedBy());
         assertNotNull(retrieved.get().getCreatedAt());
@@ -53,7 +52,6 @@ class PostRepositoryTest extends com.example.posts_service.BaseIntegrationTest {
 
         assertTrue(retrieved.isPresent());
         assertEquals("Simple announcement", retrieved.get().getText());
-        assertNull(retrieved.get().getAttachment());
         assertNull(retrieved.get().getRemarks());
     }
 
