@@ -34,10 +34,6 @@ public class Post {
 
     @Column(columnDefinition = "TEXT")
     @Setter
-    private String attachment;
-
-    @Column(columnDefinition = "TEXT")
-    @Setter
     private String remarks;
 
     @Enumerated(EnumType.STRING)
@@ -55,38 +51,11 @@ public class Post {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
-    // Attachment metadata fields
-    @Enumerated(EnumType.STRING)
-    @Column(name = "attachment_status", length = 20)
-    @Setter
-    private AttachmentStatus attachmentStatus;
-
-    @Column(name = "attachment_public_id")
-    @Setter
-    private String attachmentPublicId;
-
-    @Column(name = "attachment_filename")
-    @Setter
-    private String attachmentFilename;
-
-    @Column(name = "attachment_temp_path", length = 500)
-    @Setter
-    private String attachmentTempPath;
-
-    @Column(name = "attachment_retry_count")
-    @Setter
-    private Integer attachmentRetryCount;
-
-    @Column(name = "attachment_next_retry_at")
-    @Setter
-    private LocalDateTime attachmentNextRetryAt;
-
-    // Constructor for backward compatibility (used in existing tests)
+    // Backward-compatible constructor used in existing tests
     public Post(UUID id, String text, String attachment, String remarks, PostStatus status,
                 UUID createdBy, LocalDateTime createdAt, LocalDateTime updatedAt) {
         this.id = id;
         this.text = text;
-        this.attachment = attachment;
         this.remarks = remarks;
         this.status = status;
         this.createdBy = createdBy;
