@@ -1,11 +1,12 @@
 package com.example.posts_service.service;
 
-import com.example.posts_service.dto.CreatePostRequest;
+import com.example.posts_service.dto.CloudinaryUploadResult;
 import com.example.posts_service.dto.PostResponse;
 import com.example.posts_service.dto.UpdatePostRequest;
 import com.example.posts_service.exception.InvalidPostStatusException;
 import com.example.posts_service.exception.PostNotFoundException;
 import com.example.posts_service.exception.UnauthorizedPostAccessException;
+import com.example.posts_service.model.AttachmentStatus;
 import com.example.posts_service.model.Post;
 import com.example.posts_service.model.PostStatus;
 import com.example.posts_service.model.Role;
@@ -16,7 +17,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockMultipartFile;
 
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -27,7 +30,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -38,44 +40,59 @@ class PostServiceTest {
     @Mock
     private PostRepository postRepository;
 
+    @Mock
+    private CloudinaryService cloudinaryService;
+
+    @Mock
+    private FileValidationService fileValidationService;
+
     private PostService postService;
 
     @BeforeEach
     void setUp() {
-        postService = new PostService(postRepository);
+        postService = new PostService(postRepository, cloudinaryService, fileValidationService);
     }
 
     // --- Create Post Tests ---
 
     @Test
-    void creatingPostSetsStatusToDraft() {
+    void creatingPostWithoutAttachmentSetsStatusToDraft() {
         UUID userId = UUID.randomUUID();
-        CreatePostRequest request = new CreatePostRequest("Announcement", null, null);
 
         when(postRepository.save(any(Post.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        PostResponse response = postService.createPost(request, userId);
+        PostResponse response = postService.createPost("Announcement", null, null, userId);
 
         assertEquals(PostStatus.DRAFT, response.getStatus());
+        assertNull(response.getAttachmentStatus());
     }
 
     @Test
-    void creatingPostSavesEntityWithGeneratedUuidAndReturnsResponseWithAllFields() {
+    void creatingPostWithAttachmentUploadsToCloudinary() throws IOException {
         UUID userId = UUID.randomUUID();
-        CreatePostRequest request = new CreatePostRequest(
-                "Field trip announcement",
-                "https://example.com/doc.pdf",
-                "Contact teacher for queries"
-        );
+        MockMultipartFile file = new MockMultipartFile("attachment", "test.jpg", "image/jpeg", "content".getBytes());
+
+        when(cloudinaryService.upload(file)).thenReturn(new CloudinaryUploadResult("https://cloudinary.com/test.jpg", "posts/abc123"));
+        when(postRepository.save(any(Post.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        PostResponse response = postService.createPost("Announcement", null, file, userId);
+
+        assertEquals("https://cloudinary.com/test.jpg", response.getAttachment());
+        assertEquals("test.jpg", response.getAttachmentFilename());
+        assertEquals(AttachmentStatus.UPLOADED, response.getAttachmentStatus());
+    }
+
+    @Test
+    void creatingPostWithTextOnlyReturnsResponseWithAllFields() {
+        UUID userId = UUID.randomUUID();
 
         when(postRepository.save(any(Post.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        PostResponse response = postService.createPost(request, userId);
+        PostResponse response = postService.createPost("Field trip announcement", "Contact teacher", null, userId);
 
         assertNotNull(response.getId());
         assertEquals("Field trip announcement", response.getText());
-        assertEquals("https://example.com/doc.pdf", response.getAttachment());
-        assertEquals("Contact teacher for queries", response.getRemarks());
+        assertEquals("Contact teacher", response.getRemarks());
         assertEquals(PostStatus.DRAFT, response.getStatus());
     }
 
