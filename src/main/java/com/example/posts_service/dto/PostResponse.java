@@ -1,5 +1,6 @@
 package com.example.posts_service.dto;
 
+import com.example.posts_service.model.AttachmentStatus;
 import com.example.posts_service.model.PostStatus;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -16,6 +17,8 @@ public class PostResponse {
     private UUID id;
     private String text;
     private String attachment;
+    private String attachmentFilename;
+    private AttachmentStatus attachmentStatus;
     private String remarks;
     private PostStatus status;
     private UUID createdBy;
