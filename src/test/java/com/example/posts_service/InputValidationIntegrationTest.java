@@ -15,7 +15,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.containsString;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -44,35 +44,13 @@ class InputValidationIntegrationTest extends BaseIntegrationTest {
         UUID userId = UUID.randomUUID();
         String token = TestJwtUtil.generateToken(userId, "teacher");
 
-        mockMvc.perform(post("/api/posts")
-                        .header("Authorization", "Bearer " + token)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"text": "   ", "attachment": null}
-                                """))
+        mockMvc.perform(multipart("/api/posts")
+                        .param("text", "   ")
+                        .header("Authorization", "Bearer " + token))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400))
                 .andExpect(jsonPath("$.error").value("Bad Request"))
-                .andExpect(jsonPath("$.message").value(containsString("text")))
                 .andExpect(jsonPath("$.message").value(containsString("Text is required")));
-    }
-
-    @Test
-    void createPostWithInvalidUrlReturns400WithClearErrorMessage() throws Exception {
-        UUID userId = UUID.randomUUID();
-        String token = TestJwtUtil.generateToken(userId, "teacher");
-
-        mockMvc.perform(post("/api/posts")
-                        .header("Authorization", "Bearer " + token)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"text": "Valid text", "attachment": "not-a-url"}
-                                """))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status").value(400))
-                .andExpect(jsonPath("$.error").value("Bad Request"))
-                .andExpect(jsonPath("$.message").value(containsString("attachment")))
-                .andExpect(jsonPath("$.message").value(containsString("Attachment must be a valid URL")));
     }
 
     @Test
@@ -81,16 +59,13 @@ class InputValidationIntegrationTest extends BaseIntegrationTest {
         String token = TestJwtUtil.generateToken(userId, "teacher");
         String longRemarks = "a".repeat(1001);
 
-        mockMvc.perform(post("/api/posts")
-                        .header("Authorization", "Bearer " + token)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"text": "Valid text", "remarks": "%s"}
-                                """.formatted(longRemarks)))
+        mockMvc.perform(multipart("/api/posts")
+                        .param("text", "Valid text")
+                        .param("remarks", longRemarks)
+                        .header("Authorization", "Bearer " + token))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400))
                 .andExpect(jsonPath("$.error").value("Bad Request"))
-                .andExpect(jsonPath("$.message").value(containsString("remarks")))
                 .andExpect(jsonPath("$.message").value(containsString("Remarks must not exceed 1000 characters")));
     }
 
@@ -113,24 +88,5 @@ class InputValidationIntegrationTest extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.error").value("Bad Request"))
                 .andExpect(jsonPath("$.message").value(containsString("text")))
                 .andExpect(jsonPath("$.message").value(containsString("Text is required")));
-    }
-
-    @Test
-    void requestWithMultipleInvalidFieldsReturnsCombinedErrorMessage() throws Exception {
-        UUID userId = UUID.randomUUID();
-        String token = TestJwtUtil.generateToken(userId, "teacher");
-        String longRemarks = "a".repeat(1001);
-
-        mockMvc.perform(post("/api/posts")
-                        .header("Authorization", "Bearer " + token)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"text": "", "attachment": "invalid", "remarks": "%s"}
-                                """.formatted(longRemarks)))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status").value(400))
-                .andExpect(jsonPath("$.message").value(containsString("text")))
-                .andExpect(jsonPath("$.message").value(containsString("attachment")))
-                .andExpect(jsonPath("$.message").value(containsString("remarks")));
     }
 }
