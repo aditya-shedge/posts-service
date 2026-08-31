@@ -5,6 +5,7 @@ import com.example.posts_service.dto.UpdatePostRequest;
 import com.example.posts_service.exception.InvalidPostStatusException;
 import com.example.posts_service.exception.PostNotFoundException;
 import com.example.posts_service.exception.UnauthorizedPostAccessException;
+import com.example.posts_service.messaging.ModerationEventProducer;
 import com.example.posts_service.model.Post;
 import com.example.posts_service.model.PostStatus;
 import com.example.posts_service.model.Role;
@@ -48,11 +49,14 @@ class PostServiceTest {
     @Mock
     private FileValidationService fileValidationService;
 
+    @Mock
+    private ModerationEventProducer moderationEventProducer;
+
     private PostService postService;
 
     @BeforeEach
     void setUp() throws Exception {
-        postService = new PostService(postRepository, attachmentRepository, cloudinaryService, fileValidationService);
+        postService = new PostService(postRepository, attachmentRepository, cloudinaryService, fileValidationService, moderationEventProducer);
         // inject tempDir since @Value is not processed outside Spring context
         java.lang.reflect.Field field = PostService.class.getDeclaredField("tempDir");
         field.setAccessible(true);
@@ -103,6 +107,17 @@ class PostServiceTest {
         postService.createPost("Announcement", null, file, userId);
 
         verify(attachmentRepository).save(any());
+    }
+
+    @Test
+    void creatingPostPublishesModerationEvent() {
+        UUID userId = UUID.randomUUID();
+
+        when(postRepository.save(any(Post.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        postService.createPost("Field trip announcement", null, null, userId);
+
+        verify(moderationEventProducer).publish(any(), any());
     }
 
     @Test
