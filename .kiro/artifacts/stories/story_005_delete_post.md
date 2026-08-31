@@ -2,7 +2,7 @@
 
 ## Business Context
 
-Teachers may need to remove posts that are no longer relevant, contain outdated information, or were created in error. For example, a cancelled event announcement or a post with incorrect information should be removable. To maintain accountability and prevent unauthorized deletions, teachers can only delete posts they created.
+Teachers may need to remove posts that are no longer relevant, contain outdated information, or were created in error. For example, a cancelled event announcement or a post with incorrect information should be removable. To maintain accountability and prevent unauthorized deletions, teachers can only delete posts they created. Using soft delete preserves data for potential recovery and audit purposes.
 
 ---
 
@@ -10,7 +10,7 @@ Teachers may need to remove posts that are no longer relevant, contain outdated 
 
 **As a** teacher,  
 **I want to** delete a post that I previously created,  
-**So that** I can remove outdated or incorrect announcements from the system.
+**So that** I can remove outdated or incorrect announcements from view while preserving the data for recovery.
 
 ---
 
@@ -20,63 +20,66 @@ Teachers may need to remove posts that are no longer relevant, contain outdated 
 **Given** I am an authenticated teacher  
 **And** I have previously created a post  
 **When** I submit a delete request for that post  
-**Then** the post is permanently removed from the system  
-**And** I receive a success confirmation  
+**Then** the post status is changed to DELETED  
+**And** the updatedAt timestamp is set to the current time  
+**And** I receive a success confirmation (204 No Content)  
 
 ### AC2: Cannot delete another teacher's post
 **Given** I am an authenticated teacher  
 **And** another teacher has created a post  
 **When** I attempt to delete that post  
 **Then** the deletion is rejected  
-**And** I receive an "unauthorized" or "forbidden" error  
-**And** the post remains in the system unchanged  
+**And** I receive a "forbidden" error (403)  
+**And** the post remains unchanged  
 
 ### AC3: Cannot delete non-existent post
 **Given** I am an authenticated teacher  
 **When** I attempt to delete a post that does not exist  
-**Then** I receive a "post not found" error  
+**Then** I receive a "post not found" error (404)  
 
-### AC4: Deleted post is no longer accessible
+### AC4: Deleted post is no longer visible
 **Given** I am an authenticated teacher  
 **And** I have successfully deleted my post  
-**When** I or any other user attempts to view that post  
-**Then** a "post not found" error is returned  
+**When** I or any other user attempts to view that post by ID  
+**Then** a "post not found" error is returned (404)  
 **And** the deleted post does not appear in the list of all posts  
 
 ### AC5: Cannot delete the same post twice
 **Given** I am an authenticated teacher  
 **And** I have already deleted a post  
 **When** I attempt to delete the same post again  
-**Then** I receive a "post not found" error  
+**Then** I receive a "post not found" error (404)  
 
 ---
 
 ## Out of Scope
 
-- Soft delete (posts are permanently removed)
-- Trash/recycle bin functionality
+- Trash/recycle bin UI functionality
 - Undo delete within a time window
 - Bulk delete of multiple posts
 - Admin ability to delete any post
 - Confirmation prompt (handled by frontend)
 - Archive functionality as an alternative to deletion
+- API to restore deleted posts (future story)
 
 ---
 
 ## Dependencies
 
 - JWT Authentication must be implemented to identify the requesting user
-- Post must exist in the database
+- Post must exist in the database with status PUBLISHED
 - Authorization check must compare post's createdBy with authenticated user's ID
+- PostStatus enum must include DELETED value
 
 ---
 
 ## Assumptions
 
-- Deletion is permanent (hard delete, not soft delete)
+- Deletion is soft delete (status changed to DELETED, data preserved)
 - Only the original creator can delete a post (no admin override in this phase)
 - No confirmation is required at the API level (frontend handles confirmation UX)
-- Deleting a post does not affect any related data (no cascading deletes needed in this phase)
+- Deleted posts are excluded from all GET queries (single post and list)
+- Only PUBLISHED posts can be deleted (already-deleted posts return 404)
 
 ---
 
@@ -102,8 +105,7 @@ Authorization: Bearer <jwt_token>
 {
   "status": 403,
   "error": "Forbidden",
-  "message": "You can only modify your own posts",
-  "timestamp": "2026-08-18T15:00:00"
+  "message": "You can only modify your own posts"
 }
 ```
 
@@ -112,10 +114,19 @@ Authorization: Bearer <jwt_token>
 {
   "status": 404,
   "error": "Not Found",
-  "message": "Post not found with id: 550e8400-e29b-41d4-a716-446655440000",
-  "timestamp": "2026-08-18T15:00:00"
+  "message": "Post not found with id: 550e8400-e29b-41d4-a716-446655440000"
 }
 ```
+
+---
+
+## Technical Notes
+
+- Soft delete sets `status = PostStatus.DELETED`
+- Repository queries must filter by `status = PUBLISHED`:
+  - `findAllByStatusOrderByCreatedAtDesc(PostStatus.PUBLISHED)`
+  - `findByIdAndStatus(id, PostStatus.PUBLISHED)`
+- The `@PreUpdate` callback will automatically update the `updatedAt` timestamp
 
 ---
 
@@ -162,19 +173,6 @@ Authorization: Bearer <jwt_token>
 │  └───────────────────────────────────────────────────────┘ │
 │                                                             │
 │  (Remaining posts displayed below...)                      │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Error State - Unauthorized Delete Attempt
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                                                             │
-│  ┌───────────────────────────────────────────────────────┐ │
-│  │  ❌ Cannot delete this post                           │ │
-│  │     You can only delete posts that you created.      │ │
-│  └───────────────────────────────────────────────────────┘ │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
