@@ -21,6 +21,8 @@ public class PostResponse {
     private AttachmentStatus attachmentStatus;
     private String remarks;
     private PostStatus status;
+    private String moderationStatus;
+    private String moderationReason;
     private UUID createdBy;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

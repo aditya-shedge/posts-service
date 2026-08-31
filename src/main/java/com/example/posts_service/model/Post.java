@@ -51,6 +51,18 @@ public class Post {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
+    @Column(name = "moderation_status", length = 20)
+    @Setter
+    private String moderationStatus;
+
+    @Column(name = "moderation_reason", columnDefinition = "TEXT")
+    @Setter
+    private String moderationReason;
+
+    @Column(name = "moderated_at")
+    @Setter
+    private LocalDateTime moderatedAt;
+
     // Backward-compatible constructor used in existing tests
     public Post(UUID id, String text, String attachment, String remarks, PostStatus status,
                 UUID createdBy, LocalDateTime createdAt, LocalDateTime updatedAt) {
