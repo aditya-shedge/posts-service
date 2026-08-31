@@ -1,7 +1,6 @@
 package com.example.posts_service;
 
 import com.example.posts_service.repository.PostRepository;
-import com.example.posts_service.service.CloudinaryService;
 import com.example.posts_service.util.TestJwtUtil;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -9,7 +8,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.UUID;
@@ -27,9 +25,6 @@ class CreatePostAttachmentIntegrationTest extends BaseIntegrationTest {
 
     @Autowired
     private PostRepository postRepository;
-
-    @MockitoBean
-    private CloudinaryService cloudinaryService;
 
     @BeforeEach
     void setUp() {
