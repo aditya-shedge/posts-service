@@ -57,8 +57,8 @@ class PostControllerTest {
         setAuthenticatedUser(userId);
 
         List<PostResponse> mockPosts = List.of(
-                new PostResponse(UUID.randomUUID(), "First post", null, null, null, null, PostStatus.DRAFT, userId, LocalDateTime.now(), LocalDateTime.now()),
-                new PostResponse(UUID.randomUUID(), "Second post", null, null, null, null, PostStatus.DRAFT, userId, LocalDateTime.now(), LocalDateTime.now())
+                new PostResponse(UUID.randomUUID(), "First post", null, null, null, null, PostStatus.DRAFT, null, null, userId, LocalDateTime.now(), LocalDateTime.now()),
+                new PostResponse(UUID.randomUUID(), "Second post", null, null, null, null, PostStatus.DRAFT, null, null, userId, LocalDateTime.now(), LocalDateTime.now())
         );
         when(postService.getAllPosts(any(UserPrincipal.class))).thenReturn(mockPosts);
 
@@ -76,10 +76,7 @@ class PostControllerTest {
         UUID userId = UUID.randomUUID();
         setAuthenticatedUser(userId);
 
-        PostResponse mockResponse = new PostResponse(
-                postId, "Field trip announcement", null, null, null, null,
-                PostStatus.DRAFT, userId, LocalDateTime.now(), LocalDateTime.now()
-        );
+        PostResponse mockResponse = new PostResponse(postId, "Field trip announcement", null, null, null, null, PostStatus.DRAFT, null, null, userId, LocalDateTime.now(), LocalDateTime.now());
         when(postService.createPost(any(), any(), any(), any())).thenReturn(mockResponse);
 
         mockMvc.perform(multipart("/api/posts")
@@ -98,10 +95,7 @@ class PostControllerTest {
 
         MockMultipartFile file = new MockMultipartFile("attachment", "test.jpg", "image/jpeg", "content".getBytes());
 
-        PostResponse mockResponse = new PostResponse(
-                postId, "Announcement", "https://cloudinary.com/test.jpg", "test.jpg", AttachmentStatus.UPLOADED, null,
-                PostStatus.DRAFT, userId, LocalDateTime.now(), LocalDateTime.now()
-        );
+        PostResponse mockResponse = new PostResponse(postId, "Announcement", "https://cloudinary.com/test.jpg", "test.jpg", AttachmentStatus.UPLOADED, null, PostStatus.DRAFT, null, null, userId, LocalDateTime.now(), LocalDateTime.now());
         when(postService.createPost(any(), any(), any(), any())).thenReturn(mockResponse);
 
         mockMvc.perform(multipart("/api/posts")
@@ -130,10 +124,7 @@ class PostControllerTest {
         UUID userId = UUID.randomUUID();
         setAuthenticatedUser(userId);
 
-        PostResponse mockResponse = new PostResponse(
-                postId, "Updated text", null, null, null, "New remarks",
-                PostStatus.DRAFT, userId, LocalDateTime.now(), LocalDateTime.now()
-        );
+        PostResponse mockResponse = new PostResponse(postId, "Updated text", null, null, null, "New remarks", PostStatus.DRAFT, null, null, userId, LocalDateTime.now(), LocalDateTime.now());
         when(postService.updatePost(any(), any(), any())).thenReturn(mockResponse);
 
         mockMvc.perform(put("/api/posts/{postId}", postId)
@@ -166,10 +157,7 @@ class PostControllerTest {
         UUID userId = UUID.randomUUID();
         setAuthenticatedUser(userId, Set.of(Role.MODERATOR));
 
-        PostResponse mockResponse = new PostResponse(
-                postId, "Approved post", null, null, null, null,
-                PostStatus.PUBLISHED, UUID.randomUUID(), LocalDateTime.now(), LocalDateTime.now()
-        );
+        PostResponse mockResponse = new PostResponse(postId, "Approved post", null, null, null, null, PostStatus.PUBLISHED, null, null, UUID.randomUUID(), LocalDateTime.now(), LocalDateTime.now());
         when(postService.approvePost(any(), any())).thenReturn(mockResponse);
 
         mockMvc.perform(post("/api/posts/{postId}/approve", postId)
@@ -184,10 +172,7 @@ class PostControllerTest {
         UUID userId = UUID.randomUUID();
         setAuthenticatedUser(userId, Set.of(Role.MODERATOR));
 
-        PostResponse mockResponse = new PostResponse(
-                postId, "Rejected post", null, null, null, null,
-                PostStatus.REJECTED, UUID.randomUUID(), LocalDateTime.now(), LocalDateTime.now()
-        );
+        PostResponse mockResponse = new PostResponse(postId, "Rejected post", null, null, null, null, PostStatus.REJECTED, null, null, UUID.randomUUID(), LocalDateTime.now(), LocalDateTime.now());
         when(postService.rejectPost(any(), any())).thenReturn(mockResponse);
 
         mockMvc.perform(post("/api/posts/{postId}/reject", postId)
