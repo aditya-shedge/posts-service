@@ -6,6 +6,7 @@ import com.example.posts_service.dto.UpdatePostRequest;
 import com.example.posts_service.exception.InvalidPostStatusException;
 import com.example.posts_service.exception.PostNotFoundException;
 import com.example.posts_service.exception.UnauthorizedPostAccessException;
+import com.example.posts_service.messaging.ModerationEventProducer;
 import com.example.posts_service.model.AttachmentStatus;
 import com.example.posts_service.model.Post;
 import com.example.posts_service.model.PostAttachment;
@@ -37,6 +38,7 @@ public class PostService {
     private final AttachmentRepository attachmentRepository;
     private final CloudinaryService cloudinaryService;
     private final FileValidationService fileValidationService;
+    private final ModerationEventProducer moderationEventProducer;
 
     @Value("${app.attachment.temp-dir:${java.io.tmpdir}/posts-attachments}")
     private String tempDir;
@@ -44,11 +46,13 @@ public class PostService {
     public PostService(PostRepository postRepository,
                        AttachmentRepository attachmentRepository,
                        CloudinaryService cloudinaryService,
-                       FileValidationService fileValidationService) {
+                       FileValidationService fileValidationService,
+                       ModerationEventProducer moderationEventProducer) {
         this.postRepository = postRepository;
         this.attachmentRepository = attachmentRepository;
         this.cloudinaryService = cloudinaryService;
         this.fileValidationService = fileValidationService;
+        this.moderationEventProducer = moderationEventProducer;
     }
 
     public List<PostResponse> getAllPosts(UserPrincipal principal) {
@@ -90,7 +94,7 @@ public class PostService {
         post.setRemarks(remarks);
         post.setStatus(PostStatus.DRAFT);
         post.setCreatedBy(userId);
-        postRepository.save(post);
+        Post saved = postRepository.save(post);
 
         if (attachment != null && !attachment.isEmpty()) {
             fileValidationService.validate(attachment);
@@ -114,8 +118,9 @@ public class PostService {
             attachmentRepository.save(postAttachment);
         }
 
-        log.info("Created post: id={}, createdBy={}", post.getId(), userId);
-        return toResponse(post);
+        log.info("Created post: id={}, createdBy={}", saved.getId(), userId);
+        moderationEventProducer.publish(saved.getId(), saved.getText());
+        return toResponse(saved);
     }
 
     public PostResponse updatePost(UUID postId, UpdatePostRequest request, UserPrincipal principal) {
@@ -229,6 +234,8 @@ public class PostService {
                 attachment != null ? attachment.getStatus() : null,
                 post.getRemarks(),
                 post.getStatus(),
+                post.getModerationStatus(),
+                post.getModerationReason(),
                 post.getCreatedBy(),
                 post.getCreatedAt(),
                 post.getUpdatedAt()
