@@ -65,6 +65,15 @@ public class PostAttachment {
         this.retryCount = 0;
     }
 
+    public PostAttachment(UUID postId, String filename, AttachmentStatus status, int retryCount) {
+        this.id = UUID.randomUUID();
+        this.postId = postId;
+        this.filename = filename;
+        this.status = status;
+        this.retryCount = retryCount;
+        this.nextRetryAt = LocalDateTime.now().plusMinutes(1);
+    }
+
     @PrePersist
     void onPersist() {
         createdAt = LocalDateTime.now();

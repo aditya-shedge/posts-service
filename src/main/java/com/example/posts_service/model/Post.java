@@ -63,8 +63,17 @@ public class Post {
     @Setter
     private LocalDateTime moderatedAt;
 
+    // Constructor for creating new posts
+    public Post(String text, String remarks, UUID createdBy) {
+        this.id = UUID.randomUUID();
+        this.text = text;
+        this.remarks = remarks;
+        this.status = PostStatus.DRAFT;
+        this.createdBy = createdBy;
+    }
+
     // Backward-compatible constructor used in existing tests
-    public Post(UUID id, String text, String attachment, String remarks, PostStatus status,
+    public Post(UUID id, String text, String remarks, PostStatus status,
                 UUID createdBy, LocalDateTime createdAt, LocalDateTime updatedAt) {
         this.id = id;
         this.text = text;
