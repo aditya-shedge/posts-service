@@ -2,7 +2,6 @@ package com.example.posts_service.service;
 
 import com.example.posts_service.dto.CloudinaryUploadResult;
 import com.example.posts_service.dto.PostResponse;
-import com.example.posts_service.dto.UpdatePostRequest;
 import com.example.posts_service.exception.InvalidPostStatusException;
 import com.example.posts_service.exception.PostNotFoundException;
 import com.example.posts_service.exception.UnauthorizedPostAccessException;
@@ -74,10 +73,7 @@ public class PostService {
 
             try {
                 CloudinaryUploadResult result = cloudinaryService.upload(attachment);
-                postAttachment.setUrl(result.getUrl());
-                postAttachment.setPublicId(result.getPublicId());
-                postAttachment.setStatus(AttachmentStatus.UPLOADED);
-                postAttachment.setNextRetryAt(null);
+                postAttachment.markUploaded(result.getUrl(), result.getPublicId());
                 log.info("Attachment uploaded: postId={}, publicId={}", post.getId(), result.getPublicId());
             } catch (IOException e) {
                 log.warn("Cloudinary upload failed, queuing for retry: postId={}", post.getId());
@@ -92,16 +88,74 @@ public class PostService {
         return toResponse(saved);
     }
 
-    public PostResponse updatePost(UUID postId, UpdatePostRequest request, UserPrincipal principal) {
+    public PostResponse updatePost(UUID postId, String text, String remarks,
+                                   MultipartFile attachment, boolean removeAttachment,
+                                   UserPrincipal principal) {
         Post post = getActivePost(postId);
         requireOwner(post, principal.getUserId());
         requireDraft(post, "Can only edit DRAFT posts");
 
-        post.setText(request.getText());
-        post.setRemarks(request.getRemarks());
+        post.setText(text);
+        post.setRemarks(remarks);
+
+        if (attachment != null && !attachment.isEmpty()) {
+            fileValidationService.validate(attachment);
+            replaceAttachment(postId, attachment);
+        } else if (removeAttachment) {
+            removeAttachment(postId);
+        }
 
         log.info("Updated post: id={}, updatedBy={}", postId, principal.getUserId());
         return saveAndRespond(post);
+    }
+
+    private void replaceAttachment(UUID postId, MultipartFile file) {
+        cancelPendingRetry(postId);
+        deleteExistingAttachment(postId);
+
+        PostAttachment postAttachment = new PostAttachment(
+                postId, file.getOriginalFilename(), AttachmentStatus.PENDING, 0);
+        try {
+            CloudinaryUploadResult result = cloudinaryService.upload(file);
+            postAttachment.markUploaded(result.getUrl(), result.getPublicId());
+            log.info("Attachment replaced: postId={}, publicId={}", postId, result.getPublicId());
+        } catch (IOException e) {
+            log.warn("Cloudinary upload failed during update, queuing for retry: postId={}", postId);
+            saveTempFile(postAttachment, file, postId);
+        }
+        attachmentRepository.save(postAttachment);
+    }
+
+    private void removeAttachment(UUID postId) {
+        cancelPendingRetry(postId);
+        deleteExistingAttachment(postId);
+        log.info("Attachment removed: postId={}", postId);
+    }
+
+    private void deleteExistingAttachment(UUID postId) {
+        attachmentRepository.findByPostId(postId).ifPresent(existing -> {
+            if (existing.getPublicId() != null) {
+                try {
+                    cloudinaryService.delete(existing.getPublicId());
+                } catch (IOException e) {
+                    log.warn("Failed to delete attachment from Cloudinary: publicId={}", existing.getPublicId());
+                }
+            }
+            attachmentRepository.delete(existing);
+        });
+    }
+
+    private void cancelPendingRetry(UUID postId) {
+        attachmentRepository.findByPostId(postId).ifPresent(existing -> {
+            if (existing.getStatus() == AttachmentStatus.PENDING && existing.getTempPath() != null) {
+                try {
+                    Files.deleteIfExists(Paths.get(existing.getTempPath()));
+                    log.info("Cancelled pending retry, deleted temp file: path={}", existing.getTempPath());
+                } catch (IOException e) {
+                    log.warn("Failed to delete temp file during retry cancellation: path={}", existing.getTempPath());
+                }
+            }
+        });
     }
 
     public void deletePost(UUID postId, UserPrincipal principal) {
