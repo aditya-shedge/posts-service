@@ -73,7 +73,7 @@ public class Post {
     }
 
     // Backward-compatible constructor used in existing tests
-    public Post(UUID id, String text, String remarks, PostStatus status,
+    public Post(UUID id, String text, String attachment, String remarks, PostStatus status,
                 UUID createdBy, LocalDateTime createdAt, LocalDateTime updatedAt) {
         this.id = id;
         this.text = text;
