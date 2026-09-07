@@ -78,4 +78,11 @@ public class PostAttachment {
     void onPersist() {
         createdAt = LocalDateTime.now();
     }
+
+    public void markUploaded(String url, String publicId) {
+        this.url = url;
+        this.publicId = publicId;
+        this.status = AttachmentStatus.UPLOADED;
+        this.nextRetryAt = null;
+    }
 }
