@@ -1,11 +1,8 @@
 package com.example.posts_service.controller;
 
 import com.example.posts_service.dto.PostResponse;
-import com.example.posts_service.dto.UpdatePostRequest;
-import com.example.posts_service.model.PostStatus;
 import com.example.posts_service.security.UserPrincipal;
 import com.example.posts_service.service.PostService;
-import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
@@ -45,7 +42,6 @@ public class PostController {
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<PostResponse> createPost(
             @RequestParam("text") @NotBlank(message = "Text is required") String text,
-            @RequestParam("status") PostStatus status,
             @RequestParam(value = "remarks", required = false)
                 @Size(max = 1000, message = "Remarks must not exceed 1000 characters") String remarks,
             @RequestParam(value = "attachment", required = false) MultipartFile attachment,
@@ -54,12 +50,18 @@ public class PostController {
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
-    @PutMapping("/{postId}")
+    @PutMapping(value = "/{postId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<PostResponse> updatePost(
             @PathVariable UUID postId,
-            @Valid @RequestBody UpdatePostRequest request,
+            @RequestParam("text") @NotBlank(message = "Text is required") String text,
+            @RequestParam(value = "remarks", required = false)
+                @Size(max = 1000, message = "Remarks must not exceed 1000 characters") String remarks,
+            @RequestParam(value = "attachment", required = false) MultipartFile attachment,
+            @RequestParam(value = "removeAttachment", required = false, defaultValue = "false")
+                boolean removeAttachment,
             @AuthenticationPrincipal UserPrincipal principal) {
-        PostResponse response = postService.updatePost(postId, request, principal);
+        PostResponse response = postService.updatePost(
+                postId, text, remarks, attachment, removeAttachment, principal);
         return ResponseEntity.ok(response);
     }
 
