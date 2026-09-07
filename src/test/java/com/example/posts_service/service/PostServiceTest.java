@@ -1,7 +1,6 @@
 package com.example.posts_service.service;
 
 import com.example.posts_service.dto.PostResponse;
-import com.example.posts_service.dto.UpdatePostRequest;
 import com.example.posts_service.exception.InvalidPostStatusException;
 import com.example.posts_service.exception.PostNotFoundException;
 import com.example.posts_service.exception.UnauthorizedPostAccessException;
@@ -197,12 +196,10 @@ class PostServiceTest {
         UserPrincipal teacher = new UserPrincipal(userId, "teacher", Set.of(Role.TEACHER));
         Post existingPost = new Post(postId, "Original", null, null, PostStatus.DRAFT, userId, LocalDateTime.now(), LocalDateTime.now());
 
-        UpdatePostRequest request = new UpdatePostRequest("Updated", null, null);
-
-        when(postRepository.findById(postId)).thenReturn(Optional.of(existingPost));
+        when(postRepository.findByIdAndStatusNot(postId, PostStatus.DELETED)).thenReturn(Optional.of(existingPost));
         when(postRepository.save(any(Post.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        PostResponse response = postService.updatePost(postId, request, teacher);
+        PostResponse response = postService.updatePost(postId, "Updated", null, null, false, teacher);
 
         assertEquals("Updated", response.getText());
     }
@@ -214,11 +211,10 @@ class PostServiceTest {
         UserPrincipal teacher = new UserPrincipal(userId, "teacher", Set.of(Role.TEACHER));
         Post existingPost = new Post(postId, "Original", null, null, PostStatus.PUBLISHED, userId, LocalDateTime.now(), LocalDateTime.now());
 
-        UpdatePostRequest request = new UpdatePostRequest("Updated", null, null);
+        when(postRepository.findByIdAndStatusNot(postId, PostStatus.DELETED)).thenReturn(Optional.of(existingPost));
 
-        when(postRepository.findById(postId)).thenReturn(Optional.of(existingPost));
-
-        assertThrows(InvalidPostStatusException.class, () -> postService.updatePost(postId, request, teacher));
+        assertThrows(InvalidPostStatusException.class,
+                () -> postService.updatePost(postId, "Updated", null, null, false, teacher));
     }
 
     @Test
@@ -229,11 +225,104 @@ class PostServiceTest {
         UserPrincipal teacher = new UserPrincipal(otherUserId, "teacher", Set.of(Role.TEACHER));
         Post existingPost = new Post(postId, "Original", null, null, PostStatus.DRAFT, ownerId, LocalDateTime.now(), LocalDateTime.now());
 
-        UpdatePostRequest request = new UpdatePostRequest("Updated", null, null);
+        when(postRepository.findByIdAndStatusNot(postId, PostStatus.DELETED)).thenReturn(Optional.of(existingPost));
 
-        when(postRepository.findById(postId)).thenReturn(Optional.of(existingPost));
+        assertThrows(UnauthorizedPostAccessException.class,
+                () -> postService.updatePost(postId, "Updated", null, null, false, teacher));
+    }
 
-        assertThrows(UnauthorizedPostAccessException.class, () -> postService.updatePost(postId, request, teacher));
+    @Test
+    void updatingTextOnlyLeavesAttachmentUnchanged() throws IOException {
+        UUID postId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        UserPrincipal teacher = new UserPrincipal(userId, "teacher", Set.of(Role.TEACHER));
+        Post existingPost = new Post(postId, "Original", null, null, PostStatus.DRAFT, userId, LocalDateTime.now(), LocalDateTime.now());
+
+        when(postRepository.findByIdAndStatusNot(postId, PostStatus.DELETED)).thenReturn(Optional.of(existingPost));
+        when(postRepository.save(any(Post.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        postService.updatePost(postId, "Updated text", null, null, false, teacher);
+
+        verify(cloudinaryService, org.mockito.Mockito.never()).upload(any());
+        verify(cloudinaryService, org.mockito.Mockito.never()).delete(any());
+        verify(attachmentRepository, org.mockito.Mockito.never()).delete(any());
+    }
+
+    @Test
+    void replacingAttachmentUploadsNewAndDeletesOld() throws IOException {
+        UUID postId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        UserPrincipal teacher = new UserPrincipal(userId, "teacher", Set.of(Role.TEACHER));
+        Post existingPost = new Post(postId, "Original", null, null, PostStatus.DRAFT, userId, LocalDateTime.now(), LocalDateTime.now());
+        MockMultipartFile newFile = new MockMultipartFile("attachment", "new.jpg", "image/jpeg", "content".getBytes());
+
+        com.example.posts_service.model.PostAttachment existingAttachment =
+                new com.example.posts_service.model.PostAttachment(postId, "old.jpg",
+                        com.example.posts_service.model.AttachmentStatus.UPLOADED, 0);
+        existingAttachment.setPublicId("posts/old-public-id");
+
+        when(postRepository.findByIdAndStatusNot(postId, PostStatus.DELETED)).thenReturn(Optional.of(existingPost));
+        when(postRepository.save(any(Post.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(attachmentRepository.findByPostId(postId)).thenReturn(Optional.of(existingAttachment));
+        when(cloudinaryService.upload(any())).thenReturn(
+                new com.example.posts_service.dto.CloudinaryUploadResult("https://cloudinary.com/new.jpg", "posts/new-id"));
+        when(attachmentRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        postService.updatePost(postId, "Updated", null, newFile, false, teacher);
+
+        verify(cloudinaryService).delete("posts/old-public-id");
+        verify(cloudinaryService).upload(newFile);
+        verify(attachmentRepository).delete(existingAttachment);
+    }
+
+    @Test
+    void removingAttachmentDeletesFromCloudinaryAndClearsRecord() throws IOException {
+        UUID postId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        UserPrincipal teacher = new UserPrincipal(userId, "teacher", Set.of(Role.TEACHER));
+        Post existingPost = new Post(postId, "Original", null, null, PostStatus.DRAFT, userId, LocalDateTime.now(), LocalDateTime.now());
+
+        com.example.posts_service.model.PostAttachment existingAttachment =
+                new com.example.posts_service.model.PostAttachment(postId, "file.jpg",
+                        com.example.posts_service.model.AttachmentStatus.UPLOADED, 0);
+        existingAttachment.setPublicId("posts/abc123");
+
+        when(postRepository.findByIdAndStatusNot(postId, PostStatus.DELETED)).thenReturn(Optional.of(existingPost));
+        when(postRepository.save(any(Post.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(attachmentRepository.findByPostId(postId)).thenReturn(Optional.of(existingAttachment));
+
+        postService.updatePost(postId, "Updated", null, null, true, teacher);
+
+        verify(cloudinaryService).delete("posts/abc123");
+        verify(attachmentRepository).delete(existingAttachment);
+    }
+
+    @Test
+    void cloudinaryDeletionFailureDoesNotBlockUpdate() throws IOException {
+        UUID postId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        UserPrincipal teacher = new UserPrincipal(userId, "teacher", Set.of(Role.TEACHER));
+        Post existingPost = new Post(postId, "Original", null, null, PostStatus.DRAFT, userId, LocalDateTime.now(), LocalDateTime.now());
+        MockMultipartFile newFile = new MockMultipartFile("attachment", "new.jpg", "image/jpeg", "content".getBytes());
+
+        com.example.posts_service.model.PostAttachment existingAttachment =
+                new com.example.posts_service.model.PostAttachment(postId, "old.jpg",
+                        com.example.posts_service.model.AttachmentStatus.UPLOADED, 0);
+        existingAttachment.setPublicId("posts/old-id");
+
+        when(postRepository.findByIdAndStatusNot(postId, PostStatus.DELETED)).thenReturn(Optional.of(existingPost));
+        when(postRepository.save(any(Post.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(attachmentRepository.findByPostId(postId)).thenReturn(Optional.of(existingAttachment));
+        org.mockito.Mockito.doThrow(new IOException("Cloudinary down")).when(cloudinaryService).delete(any());
+        when(cloudinaryService.upload(any())).thenReturn(
+                new com.example.posts_service.dto.CloudinaryUploadResult("https://cloudinary.com/new.jpg", "posts/new-id"));
+        when(attachmentRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        // Should not throw
+        postService.updatePost(postId, "Updated", null, newFile, false, teacher);
+
+        verify(cloudinaryService).upload(newFile);
+        verify(attachmentRepository).save(any());
     }
 
     // --- Delete Post Tests ---
@@ -245,7 +334,7 @@ class PostServiceTest {
         UserPrincipal teacher = new UserPrincipal(userId, "teacher", Set.of(Role.TEACHER));
         Post existingPost = new Post(postId, "Draft", null, null, PostStatus.DRAFT, userId, LocalDateTime.now(), LocalDateTime.now());
 
-        when(postRepository.findById(postId)).thenReturn(Optional.of(existingPost));
+        when(postRepository.findByIdAndStatusNot(postId, PostStatus.DELETED)).thenReturn(Optional.of(existingPost));
         when(postRepository.save(any(Post.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         postService.deletePost(postId, teacher);
@@ -261,7 +350,7 @@ class PostServiceTest {
         UserPrincipal teacher = new UserPrincipal(userId, "teacher", Set.of(Role.TEACHER));
         Post existingPost = new Post(postId, "Published", null, null, PostStatus.PUBLISHED, userId, LocalDateTime.now(), LocalDateTime.now());
 
-        when(postRepository.findById(postId)).thenReturn(Optional.of(existingPost));
+        when(postRepository.findByIdAndStatusNot(postId, PostStatus.DELETED)).thenReturn(Optional.of(existingPost));
 
         assertThrows(InvalidPostStatusException.class, () -> postService.deletePost(postId, teacher));
     }
@@ -275,7 +364,7 @@ class PostServiceTest {
         UserPrincipal moderator = new UserPrincipal(moderatorId, "moderator", Set.of(Role.MODERATOR));
         Post existingPost = new Post(postId, "Draft", null, null, PostStatus.DRAFT, UUID.randomUUID(), LocalDateTime.now(), LocalDateTime.now());
 
-        when(postRepository.findById(postId)).thenReturn(Optional.of(existingPost));
+        when(postRepository.findByIdAndStatusNot(postId, PostStatus.DELETED)).thenReturn(Optional.of(existingPost));
         when(postRepository.save(any(Post.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         PostResponse response = postService.approvePost(postId, moderator);
@@ -290,7 +379,7 @@ class PostServiceTest {
         UserPrincipal moderator = new UserPrincipal(moderatorId, "moderator", Set.of(Role.MODERATOR));
         Post existingPost = new Post(postId, "Published", null, null, PostStatus.PUBLISHED, UUID.randomUUID(), LocalDateTime.now(), LocalDateTime.now());
 
-        when(postRepository.findById(postId)).thenReturn(Optional.of(existingPost));
+        when(postRepository.findByIdAndStatusNot(postId, PostStatus.DELETED)).thenReturn(Optional.of(existingPost));
 
         assertThrows(InvalidPostStatusException.class, () -> postService.approvePost(postId, moderator));
     }
@@ -313,7 +402,7 @@ class PostServiceTest {
         UserPrincipal moderator = new UserPrincipal(moderatorId, "moderator", Set.of(Role.MODERATOR));
         Post existingPost = new Post(postId, "Draft", null, null, PostStatus.DRAFT, UUID.randomUUID(), LocalDateTime.now(), LocalDateTime.now());
 
-        when(postRepository.findById(postId)).thenReturn(Optional.of(existingPost));
+        when(postRepository.findByIdAndStatusNot(postId, PostStatus.DELETED)).thenReturn(Optional.of(existingPost));
         when(postRepository.save(any(Post.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         PostResponse response = postService.rejectPost(postId, moderator);

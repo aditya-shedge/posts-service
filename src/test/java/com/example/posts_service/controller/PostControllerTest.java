@@ -25,6 +25,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -125,17 +126,13 @@ class PostControllerTest {
         setAuthenticatedUser(userId);
 
         PostResponse mockResponse = new PostResponse(postId, "Updated text", null, null, null, "New remarks", PostStatus.DRAFT, null, null, userId, LocalDateTime.now(), LocalDateTime.now());
-        when(postService.updatePost(any(), any(), any())).thenReturn(mockResponse);
+        when(postService.updatePost(any(), any(), any(), any(), anyBoolean(), any())).thenReturn(mockResponse);
 
-        mockMvc.perform(put("/api/posts/{postId}", postId)
-                        .header("Authorization", "Bearer " + TestJwtUtil.generateToken(userId, "teacher"))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "text": "Updated text",
-                                  "remarks": "New remarks"
-                                }
-                                """))
+        mockMvc.perform(multipart("/api/posts/{postId}", postId)
+                        .param("text", "Updated text")
+                        .param("remarks", "New remarks")
+                        .with(request -> { request.setMethod("PUT"); return request; })
+                        .header("Authorization", "Bearer " + TestJwtUtil.generateToken(userId, "teacher")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.text").value("Updated text"));
     }

@@ -100,4 +100,62 @@ class PostRepositoryTest extends com.example.posts_service.BaseIntegrationTest {
 
         assertTrue(result.isEmpty());
     }
+
+    @Test
+    void findVisiblePostReturnsOwnDraftPost() {
+        UUID userId = UUID.randomUUID();
+        UUID postId = UUID.randomUUID();
+        postRepository.save(new Post(postId, "My draft", null, null, PostStatus.DRAFT, userId, null, null));
+
+        Optional<Post> result = postRepository.findVisiblePost(postId, userId, false);
+
+        assertTrue(result.isPresent());
+    }
+
+    @Test
+    void findVisiblePostReturnsPublishedPostForAnyUser() {
+        UUID ownerId = UUID.randomUUID();
+        UUID otherId = UUID.randomUUID();
+        UUID postId = UUID.randomUUID();
+        postRepository.save(new Post(postId, "Published post", null, null, PostStatus.PUBLISHED, ownerId, null, null));
+
+        Optional<Post> result = postRepository.findVisiblePost(postId, otherId, false);
+
+        assertTrue(result.isPresent());
+    }
+
+    @Test
+    void findVisiblePostReturnsDraftForModerator() {
+        UUID ownerId = UUID.randomUUID();
+        UUID moderatorId = UUID.randomUUID();
+        UUID postId = UUID.randomUUID();
+        postRepository.save(new Post(postId, "Draft post", null, null, PostStatus.DRAFT, ownerId, null, null));
+
+        Optional<Post> result = postRepository.findVisiblePost(postId, moderatorId, true);
+
+        assertTrue(result.isPresent());
+    }
+
+    @Test
+    void findVisiblePostReturnsEmptyForAnotherUsersDraft() {
+        UUID ownerId = UUID.randomUUID();
+        UUID otherId = UUID.randomUUID();
+        UUID postId = UUID.randomUUID();
+        postRepository.save(new Post(postId, "Draft post", null, null, PostStatus.DRAFT, ownerId, null, null));
+
+        Optional<Post> result = postRepository.findVisiblePost(postId, otherId, false);
+
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void findVisiblePostReturnsEmptyForDeletedPost() {
+        UUID userId = UUID.randomUUID();
+        UUID postId = UUID.randomUUID();
+        postRepository.save(new Post(postId, "Deleted post", null, null, PostStatus.DELETED, userId, null, null));
+
+        Optional<Post> result = postRepository.findVisiblePost(postId, userId, true);
+
+        assertTrue(result.isEmpty());
+    }
 }
