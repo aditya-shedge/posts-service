@@ -9,8 +9,12 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
 @Repository
 public interface PostRepository extends JpaRepository<Post, UUID> {
+
     List<Post> findAllByOrderByCreatedAtDesc();
 
     List<Post> findAllByStatusOrderByCreatedAtDesc(PostStatus status);
@@ -20,4 +24,17 @@ public interface PostRepository extends JpaRepository<Post, UUID> {
     List<Post> findAllByCreatedByAndStatusNotOrderByCreatedAtDesc(UUID createdBy, PostStatus status);
 
     Optional<Post> findByIdAndStatus(UUID id, PostStatus status);
+
+    Optional<Post> findByIdAndStatusNot(UUID id, PostStatus status);
+
+    @Query("""
+            SELECT p FROM Post p
+            WHERE p.id = :postId
+            AND p.status != 'DELETED'
+            AND (p.createdBy = :userId OR p.status = 'PUBLISHED' OR :isModerator = true)
+            """)
+    Optional<Post> findVisiblePost(
+            @Param("postId") UUID postId,
+            @Param("userId") UUID userId,
+            @Param("isModerator") boolean isModerator);
 }

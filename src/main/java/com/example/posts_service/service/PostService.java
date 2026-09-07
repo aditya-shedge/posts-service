@@ -20,6 +20,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import lombok.RequiredArgsConstructor;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -30,6 +31,7 @@ import java.util.List;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class PostService {
 
     private static final Logger log = LoggerFactory.getLogger(PostService.class);
@@ -43,75 +45,42 @@ public class PostService {
     @Value("${app.attachment.temp-dir:${java.io.tmpdir}/posts-attachments}")
     private String tempDir;
 
-    public PostService(PostRepository postRepository,
-                       AttachmentRepository attachmentRepository,
-                       CloudinaryService cloudinaryService,
-                       FileValidationService fileValidationService,
-                       ModerationEventProducer moderationEventProducer) {
-        this.postRepository = postRepository;
-        this.attachmentRepository = attachmentRepository;
-        this.cloudinaryService = cloudinaryService;
-        this.fileValidationService = fileValidationService;
-        this.moderationEventProducer = moderationEventProducer;
-    }
-
     public List<PostResponse> getAllPosts(UserPrincipal principal) {
-        if (principal.hasRole(Role.MODERATOR)) {
-            return postRepository.findAllByStatusOrderByCreatedAtDesc(PostStatus.DRAFT).stream()
-                    .map(this::toResponse)
-                    .toList();
-        } else {
-            return postRepository.findAllByCreatedByAndStatusNotOrderByCreatedAtDesc(
-                            principal.getUserId(), PostStatus.DELETED).stream()
-                    .map(this::toResponse)
-                    .toList();
-        }
+        List<Post> posts = principal.hasRole(Role.MODERATOR)
+                ? postRepository.findAllByStatusOrderByCreatedAtDesc(PostStatus.DRAFT)
+                : postRepository.findAllByCreatedByAndStatusNotOrderByCreatedAtDesc(
+                        principal.getUserId(), PostStatus.DELETED);
+
+        return posts.stream().map(this::toResponse).toList();
     }
 
     public PostResponse getPostById(UUID postId, UserPrincipal principal) {
-        Post post = postRepository.findById(postId)
+        return postRepository.findVisiblePost(
+                        postId,
+                        principal.getUserId(),
+                        principal.hasRole(Role.MODERATOR))
+                .map(this::toResponse)
                 .orElseThrow(() -> new PostNotFoundException(postId));
-
-        if (post.getStatus() == PostStatus.DELETED) {
-            throw new PostNotFoundException(postId);
-        }
-
-        boolean isOwner = post.getCreatedBy().equals(principal.getUserId());
-        boolean isModerator = principal.hasRole(Role.MODERATOR);
-        boolean isPublished = post.getStatus() == PostStatus.PUBLISHED;
-
-        if (!isOwner && !isModerator && !isPublished) {
-            throw new PostNotFoundException(postId);
-        }
-
-        return toResponse(post);
     }
 
     public PostResponse createPost(String text, String remarks, MultipartFile attachment, UUID userId) {
-        Post post = new Post();
-        post.setId(UUID.randomUUID());
-        post.setText(text);
-        post.setRemarks(remarks);
-        post.setStatus(PostStatus.DRAFT);
-        post.setCreatedBy(userId);
+        Post post = new Post(text, remarks, userId);
         Post saved = postRepository.save(post);
 
         if (attachment != null && !attachment.isEmpty()) {
             fileValidationService.validate(attachment);
-            PostAttachment postAttachment = new PostAttachment(UUID.randomUUID(), post.getId());
-            postAttachment.setFilename(attachment.getOriginalFilename());
+            PostAttachment postAttachment = new PostAttachment(
+                    post.getId(), attachment.getOriginalFilename(), AttachmentStatus.PENDING, 0);
 
             try {
                 CloudinaryUploadResult result = cloudinaryService.upload(attachment);
                 postAttachment.setUrl(result.getUrl());
                 postAttachment.setPublicId(result.getPublicId());
                 postAttachment.setStatus(AttachmentStatus.UPLOADED);
+                postAttachment.setNextRetryAt(null);
                 log.info("Attachment uploaded: postId={}, publicId={}", post.getId(), result.getPublicId());
             } catch (IOException e) {
                 log.warn("Cloudinary upload failed, queuing for retry: postId={}", post.getId());
-                postAttachment.setStatus(AttachmentStatus.PENDING);
-                postAttachment.setRetryCount(0);
-                postAttachment.setNextRetryAt(LocalDateTime.now().plusMinutes(1));
                 saveTempFile(postAttachment, attachment, post.getId());
             }
 
@@ -124,87 +93,81 @@ public class PostService {
     }
 
     public PostResponse updatePost(UUID postId, UpdatePostRequest request, UserPrincipal principal) {
-        Post post = postRepository.findById(postId)
-                .orElseThrow(() -> new PostNotFoundException(postId));
-
-        if (post.getStatus() == PostStatus.DELETED) {
-            throw new PostNotFoundException(postId);
-        }
-
-        if (!post.getCreatedBy().equals(principal.getUserId())) {
-            throw new UnauthorizedPostAccessException(postId);
-        }
-
-        if (post.getStatus() != PostStatus.DRAFT) {
-            throw new InvalidPostStatusException("Can only edit DRAFT posts");
-        }
+        Post post = getActivePost(postId);
+        requireOwner(post, principal.getUserId());
+        requireDraft(post, "Can only edit DRAFT posts");
 
         post.setText(request.getText());
         post.setRemarks(request.getRemarks());
 
-        Post saved = postRepository.save(post);
-        log.info("Updated post: id={}, updatedBy={}", saved.getId(), principal.getUserId());
-
-        return toResponse(saved);
+        log.info("Updated post: id={}, updatedBy={}", postId, principal.getUserId());
+        return saveAndRespond(post);
     }
 
     public void deletePost(UUID postId, UserPrincipal principal) {
-        Post post = postRepository.findById(postId)
-                .orElseThrow(() -> new PostNotFoundException(postId));
+        Post post = getActivePost(postId);
 
-        if (post.getStatus() == PostStatus.DELETED) {
-            throw new PostNotFoundException(postId);
-        }
+        requireOwner(post, principal.getUserId());
+        requireDraft(post, "Can only delete DRAFT posts");
+        setStatus(post, PostStatus.DELETED);
 
-        if (!post.getCreatedBy().equals(principal.getUserId())) {
-            throw new UnauthorizedPostAccessException(postId);
-        }
-
-        if (post.getStatus() != PostStatus.DRAFT) {
-            throw new InvalidPostStatusException("Can only delete DRAFT posts");
-        }
-
-        post.setStatus(PostStatus.DELETED);
         postRepository.save(post);
         log.info("Deleted post: id={}, deletedBy={}", postId, principal.getUserId());
     }
 
     public PostResponse approvePost(UUID postId, UserPrincipal principal) {
-        if (!principal.hasRole(Role.MODERATOR)) {
-            throw new UnauthorizedPostAccessException(postId);
-        }
+        requireModerator(principal, postId);
 
-        Post post = postRepository.findById(postId)
-                .orElseThrow(() -> new PostNotFoundException(postId));
+        Post post = getActivePost(postId);
 
-        if (post.getStatus() != PostStatus.DRAFT) {
-            throw new InvalidPostStatusException("Can only approve DRAFT posts");
-        }
+        requireDraft(post, "Can only approve DRAFT posts");
+        setStatus(post, PostStatus.PUBLISHED);
 
-        post.setStatus(PostStatus.PUBLISHED);
-        Post saved = postRepository.save(post);
         log.info("Approved post: id={}, approvedBy={}", postId, principal.getUserId());
-
-        return toResponse(saved);
+        return saveAndRespond(post);
     }
 
     public PostResponse rejectPost(UUID postId, UserPrincipal principal) {
+        requireModerator(principal, postId);
+
+        Post post = getActivePost(postId);
+
+        requireDraft(post, "Can only reject DRAFT posts");
+        setStatus(post, PostStatus.REJECTED);
+
+        log.info("Rejected post: id={}, rejectedBy={}", postId, principal.getUserId());
+        return saveAndRespond(post);
+    }
+
+    private Post getActivePost(UUID postId) {
+        return postRepository.findByIdAndStatusNot(postId, PostStatus.DELETED)
+                .orElseThrow(() -> new PostNotFoundException(postId));
+    }
+
+    private void requireOwner(Post post, UUID userId) {
+        if (!post.getCreatedBy().equals(userId)) {
+            throw new UnauthorizedPostAccessException(post.getId());
+        }
+    }
+
+    private void requireDraft(Post post, String errorMessage) {
+        if (post.getStatus() != PostStatus.DRAFT) {
+            throw new InvalidPostStatusException(errorMessage);
+        }
+    }
+
+    private void requireModerator(UserPrincipal principal, UUID postId) {
         if (!principal.hasRole(Role.MODERATOR)) {
             throw new UnauthorizedPostAccessException(postId);
         }
+    }
 
-        Post post = postRepository.findById(postId)
-                .orElseThrow(() -> new PostNotFoundException(postId));
+    private PostResponse saveAndRespond(Post post) {
+        return toResponse(postRepository.save(post));
+    }
 
-        if (post.getStatus() != PostStatus.DRAFT) {
-            throw new InvalidPostStatusException("Can only reject DRAFT posts");
-        }
-
-        post.setStatus(PostStatus.REJECTED);
-        Post saved = postRepository.save(post);
-        log.info("Rejected post: id={}, rejectedBy={}", postId, principal.getUserId());
-
-        return toResponse(saved);
+    private void setStatus(Post post, PostStatus status) {
+        post.setStatus(status);
     }
 
     private void saveTempFile(PostAttachment attachment, MultipartFile file, UUID postId) {
