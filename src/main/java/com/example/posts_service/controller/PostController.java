@@ -5,6 +5,10 @@ import com.example.posts_service.security.UserPrincipal;
 import com.example.posts_service.service.PostService;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -26,10 +30,11 @@ public class PostController {
     private final PostService postService;
 
     @GetMapping
-    @ResponseBody
-    public ResponseEntity<List<PostResponse>> getAllPosts(
-            @AuthenticationPrincipal UserPrincipal principal) {
-        return ResponseEntity.ok(postService.getAllPosts(principal));
+    public ResponseEntity<Page<PostResponse>> getAllPosts(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC)
+            Pageable pageable) {
+        return ResponseEntity.ok(postService.getAllPosts(principal, pageable));
     }
 
     @GetMapping("/{postId}")
