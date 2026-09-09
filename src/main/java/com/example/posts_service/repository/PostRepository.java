@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -26,6 +28,10 @@ public interface PostRepository extends JpaRepository<Post, UUID> {
     Optional<Post> findByIdAndStatus(UUID id, PostStatus status);
 
     Optional<Post> findByIdAndStatusNot(UUID id, PostStatus status);
+
+    Page<Post> findAllByStatus(PostStatus status, Pageable pageable);
+
+    Page<Post> findAllByCreatedByAndStatusNot(UUID createdBy, PostStatus status, Pageable pageable);
 
     @Query("""
             SELECT p FROM Post p
