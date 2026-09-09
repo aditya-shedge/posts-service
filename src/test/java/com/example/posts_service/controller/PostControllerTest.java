@@ -61,14 +61,16 @@ class PostControllerTest {
                 new PostResponse(UUID.randomUUID(), "First post", null, null, null, null, PostStatus.DRAFT, null, null, userId, LocalDateTime.now(), LocalDateTime.now()),
                 new PostResponse(UUID.randomUUID(), "Second post", null, null, null, null, PostStatus.DRAFT, null, null, userId, LocalDateTime.now(), LocalDateTime.now())
         );
-        when(postService.getAllPosts(any(UserPrincipal.class))).thenReturn(mockPosts);
+        when(postService.getAllPosts(any(UserPrincipal.class), any()))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(mockPosts));
 
         mockMvc.perform(get("/api/posts")
                         .header("Authorization", "Bearer " + TestJwtUtil.generateToken(userId, "teacher")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2))
-                .andExpect(jsonPath("$[0].text").value("First post"))
-                .andExpect(jsonPath("$[1].text").value("Second post"));
+                .andExpect(jsonPath("$.content.length()").value(2))
+                .andExpect(jsonPath("$.content[0].text").value("First post"))
+                .andExpect(jsonPath("$.content[1].text").value("Second post"))
+                .andExpect(jsonPath("$.totalElements").value(2));
     }
 
     @Test

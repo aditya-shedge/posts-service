@@ -30,6 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -162,12 +163,13 @@ class PostServiceTest {
         Post draftPost = new Post(UUID.randomUUID(), "Draft", null, null, PostStatus.DRAFT, userId, LocalDateTime.now(), LocalDateTime.now());
         Post publishedPost = new Post(UUID.randomUUID(), "Published", null, null, PostStatus.PUBLISHED, userId, LocalDateTime.now(), LocalDateTime.now());
 
-        when(postRepository.findAllByCreatedByAndStatusNotOrderByCreatedAtDesc(userId, PostStatus.DELETED))
-                .thenReturn(List.of(draftPost, publishedPost));
+        when(postRepository.findAllByCreatedByAndStatusNot(eq(userId), eq(PostStatus.DELETED), any()))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(draftPost, publishedPost)));
 
-        List<PostResponse> responses = postService.getAllPosts(teacher);
+        org.springframework.data.domain.Page<PostResponse> page =
+                postService.getAllPosts(teacher, org.springframework.data.domain.Pageable.unpaged());
 
-        assertEquals(2, responses.size());
+        assertEquals(2, page.getContent().size());
     }
 
     @Test
@@ -179,12 +181,13 @@ class PostServiceTest {
         Post draftPost1 = new Post(UUID.randomUUID(), "Draft 1", null, null, PostStatus.DRAFT, otherUserId, LocalDateTime.now(), LocalDateTime.now());
         Post draftPost2 = new Post(UUID.randomUUID(), "Draft 2", null, null, PostStatus.DRAFT, otherUserId, LocalDateTime.now(), LocalDateTime.now());
 
-        when(postRepository.findAllByStatusOrderByCreatedAtDesc(PostStatus.DRAFT))
-                .thenReturn(List.of(draftPost1, draftPost2));
+        when(postRepository.findAllByStatus(eq(PostStatus.DRAFT), any()))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(draftPost1, draftPost2)));
 
-        List<PostResponse> responses = postService.getAllPosts(moderator);
+        org.springframework.data.domain.Page<PostResponse> page =
+                postService.getAllPosts(moderator, org.springframework.data.domain.Pageable.unpaged());
 
-        assertEquals(2, responses.size());
+        assertEquals(2, page.getContent().size());
     }
 
     // --- Update Post Tests ---

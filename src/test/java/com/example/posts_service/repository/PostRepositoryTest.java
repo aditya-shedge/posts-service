@@ -158,4 +158,55 @@ class PostRepositoryTest extends com.example.posts_service.BaseIntegrationTest {
 
         assertTrue(result.isEmpty());
     }
+
+    @Test
+    void paginatedFindByStatusReturnsCorrectPage() {
+        UUID userId = UUID.randomUUID();
+        for (int i = 0; i < 15; i++) {
+            postRepository.save(new Post(UUID.randomUUID(), "Draft " + i, null, null, PostStatus.DRAFT, userId, null, null));
+        }
+
+        org.springframework.data.domain.Page<Post> page = postRepository.findAllByStatus(
+                PostStatus.DRAFT,
+                org.springframework.data.domain.PageRequest.of(0, 10));
+
+        assertEquals(10, page.getContent().size());
+        assertEquals(15, page.getTotalElements());
+        assertEquals(2, page.getTotalPages());
+    }
+
+    @Test
+    void paginatedFindByStatusReturnsLastPageWithRemainingItems() {
+        UUID userId = UUID.randomUUID();
+        for (int i = 0; i < 12; i++) {
+            postRepository.save(new Post(UUID.randomUUID(), "Draft " + i, null, null, PostStatus.DRAFT, userId, null, null));
+        }
+
+        org.springframework.data.domain.Page<Post> page = postRepository.findAllByStatus(
+                PostStatus.DRAFT,
+                org.springframework.data.domain.PageRequest.of(1, 10));
+
+        assertEquals(2, page.getContent().size());
+        assertEquals(12, page.getTotalElements());
+        assertTrue(page.isLast());
+    }
+
+    @Test
+    void paginatedFindByCreatedByAndStatusNotReturnsOwnPostsExcludingDeleted() {
+        UUID userId = UUID.randomUUID();
+        UUID otherUserId = UUID.randomUUID();
+        for (int i = 0; i < 5; i++) {
+            postRepository.save(new Post(UUID.randomUUID(), "My post " + i, null, null, PostStatus.DRAFT, userId, null, null));
+        }
+        postRepository.save(new Post(UUID.randomUUID(), "Other post", null, null, PostStatus.DRAFT, otherUserId, null, null));
+        postRepository.save(new Post(UUID.randomUUID(), "Deleted post", null, null, PostStatus.DELETED, userId, null, null));
+
+        org.springframework.data.domain.Page<Post> page = postRepository.findAllByCreatedByAndStatusNot(
+                userId,
+                PostStatus.DELETED,
+                org.springframework.data.domain.PageRequest.of(0, 10));
+
+        assertEquals(5, page.getContent().size());
+        assertEquals(5, page.getTotalElements());
+    }
 }

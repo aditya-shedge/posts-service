@@ -57,9 +57,10 @@ class GetAllPostsIntegrationTest extends BaseIntegrationTest {
         mockMvc.perform(get("/api/posts")
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2))
-                .andExpect(jsonPath("$[0].text").value("Newer announcement"))
-                .andExpect(jsonPath("$[1].text").value("Older announcement"));
+                .andExpect(jsonPath("$.content.length()").value(2))
+                .andExpect(jsonPath("$.content[0].text").value("Newer announcement"))
+                .andExpect(jsonPath("$.content[1].text").value("Older announcement"))
+                .andExpect(jsonPath("$.totalElements").value(2));
     }
 
     @Test
@@ -74,8 +75,9 @@ class GetAllPostsIntegrationTest extends BaseIntegrationTest {
         mockMvc.perform(get("/api/posts")
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].text").value("Post by teacher one"));
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].text").value("Post by teacher one"))
+                .andExpect(jsonPath("$.totalElements").value(1));
     }
 
     @Test
@@ -91,7 +93,8 @@ class GetAllPostsIntegrationTest extends BaseIntegrationTest {
         mockMvc.perform(get("/api/posts")
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(3));
+                .andExpect(jsonPath("$.content.length()").value(3))
+                .andExpect(jsonPath("$.totalElements").value(3));
     }
 
     @Test
@@ -108,6 +111,77 @@ class GetAllPostsIntegrationTest extends BaseIntegrationTest {
         mockMvc.perform(get("/api/posts")
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2));
+                .andExpect(jsonPath("$.content.length()").value(2))
+                .andExpect(jsonPath("$.totalElements").value(2));
+    }
+
+    @Test
+    void responseContainsPaginationMetadata() throws Exception {
+        UUID userId = UUID.randomUUID();
+        String token = TestJwtUtil.generateToken(userId, "teacher");
+
+        postRepository.save(new Post(UUID.randomUUID(), "Post", null, null, PostStatus.DRAFT, userId, null, null));
+
+        mockMvc.perform(get("/api/posts")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").exists())
+                .andExpect(jsonPath("$.totalElements").exists())
+                .andExpect(jsonPath("$.totalPages").exists())
+                .andExpect(jsonPath("$.number").value(0))
+                .andExpect(jsonPath("$.size").value(10))
+                .andExpect(jsonPath("$.first").value(true))
+                .andExpect(jsonPath("$.last").value(true));
+    }
+
+    @Test
+    void secondPageReturnsCorrectSubset() throws Exception {
+        UUID userId = UUID.randomUUID();
+        String token = TestJwtUtil.generateToken(userId, "teacher");
+
+        for (int i = 0; i < 12; i++) {
+            postRepository.save(new Post(UUID.randomUUID(), "Post " + i, null, null, PostStatus.DRAFT, userId, null, null));
+        }
+
+        mockMvc.perform(get("/api/posts?page=1&size=10")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(2))
+                .andExpect(jsonPath("$.totalElements").value(12))
+                .andExpect(jsonPath("$.totalPages").value(2))
+                .andExpect(jsonPath("$.number").value(1))
+                .andExpect(jsonPath("$.last").value(true));
+    }
+
+    @Test
+    void pageExceedingTotalReturnsEmptyContent() throws Exception {
+        UUID userId = UUID.randomUUID();
+        String token = TestJwtUtil.generateToken(userId, "teacher");
+
+        postRepository.save(new Post(UUID.randomUUID(), "Post", null, null, PostStatus.DRAFT, userId, null, null));
+
+        mockMvc.perform(get("/api/posts?page=99")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(0))
+                .andExpect(jsonPath("$.totalElements").value(1));
+    }
+
+    @Test
+    void customPageSizeLimitsResults() throws Exception {
+        UUID userId = UUID.randomUUID();
+        String token = TestJwtUtil.generateToken(userId, "teacher");
+
+        for (int i = 0; i < 8; i++) {
+            postRepository.save(new Post(UUID.randomUUID(), "Post " + i, null, null, PostStatus.DRAFT, userId, null, null));
+        }
+
+        mockMvc.perform(get("/api/posts?size=5")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(5))
+                .andExpect(jsonPath("$.totalElements").value(8))
+                .andExpect(jsonPath("$.totalPages").value(2))
+                .andExpect(jsonPath("$.size").value(5));
     }
 }
