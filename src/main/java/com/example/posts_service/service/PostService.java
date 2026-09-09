@@ -17,6 +17,8 @@ import com.example.posts_service.security.UserPrincipal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import lombok.RequiredArgsConstructor;
@@ -26,7 +28,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -44,13 +45,13 @@ public class PostService {
     @Value("${app.attachment.temp-dir:${java.io.tmpdir}/posts-attachments}")
     private String tempDir;
 
-    public List<PostResponse> getAllPosts(UserPrincipal principal) {
-        List<Post> posts = principal.hasRole(Role.MODERATOR)
-                ? postRepository.findAllByStatusOrderByCreatedAtDesc(PostStatus.DRAFT)
-                : postRepository.findAllByCreatedByAndStatusNotOrderByCreatedAtDesc(
-                        principal.getUserId(), PostStatus.DELETED);
+    public Page<PostResponse> getAllPosts(UserPrincipal principal, Pageable pageable) {
+        Page<Post> posts = principal.hasRole(Role.MODERATOR)
+                ? postRepository.findAllByStatus(PostStatus.DRAFT, pageable)
+                : postRepository.findAllByCreatedByAndStatusNot(
+                        principal.getUserId(), PostStatus.DELETED, pageable);
 
-        return posts.stream().map(this::toResponse).toList();
+        return posts.map(this::toResponse);
     }
 
     public PostResponse getPostById(UUID postId, UserPrincipal principal) {
